@@ -43,15 +43,18 @@ sudo apt install -y docker-compose-plugin
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/yourusername/tunnbox.git
+git clone https://github.com/pgorbunov/tunnbox.git
 cd tunnbox
 ```
 
-2. Configure your server's public IP:
+2. Configure your environment:
 
 ```bash
-# Create .env file with your server's public IP
-echo "WG_DEFAULT_ENDPOINT=$(curl -s ifconfig.me)" > .env
+# Copy the example environment file
+cp .env.example .env
+
+# Edit the file to set your server's public IP (WG_DEFAULT_ENDPOINT)
+nano .env
 ```
 
 3. Start the container:
@@ -116,6 +119,7 @@ Configure via `.env` file or docker-compose environment:
 | `APP_PORT` | Web UI port | `8000` |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | JWT token expiration | `15` |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | Refresh token expiration | `7` |
+| `CORS_ORIGINS` | Comma-separated list of allowed origins | - |
 
 ### Custom WireGuard Port
 
