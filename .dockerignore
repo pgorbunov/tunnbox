@@ -1,0 +1,38 @@
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Development
+.env
+.env.*
+*.md
+docs/
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+venv/
+.venv/
+*.egg-info/
+.pytest_cache/
+.coverage
+
+# Node
+node_modules/
+frontend/.svelte-kit/
+
+# IDE
+.vscode/
+.idea/
+
+# Data directories (mounted as volumes)
+data/
+
+# Tests
+# backend/tests/

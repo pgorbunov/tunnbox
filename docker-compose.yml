@@ -1,0 +1,80 @@
+services:
+  tunnbox:
+    build: .
+    image: tunnbox:latest
+    container_name: tunnbox
+    restart: unless-stopped
+
+    # Security hardening (SEC-033)
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+      - MKNOD
+    security_opt:
+      - no-new-privileges:true
+
+    # Resource limits (SEC-028)
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+    # Log rotation (SEC-034)
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Required sysctls for networking
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+      - net.ipv6.conf.all.forwarding=1
+
+    ports:
+      # Web UI
+      - "8000:8000"
+      # WireGuard interfaces
+      - "51820:51820/udp" # wg0
+      - "51821:51821/udp" # wg1
+
+    volumes:
+      # Persist WireGuard configurations
+      - ./data/wireguard:/etc/wireguard
+      # Persist application data (database, etc.)
+      - ./data/app:/app/data
+      # Required for WireGuard kernel module
+      - /lib/modules:/lib/modules:ro
+
+    environment:
+      # REQUIRED: Set this to your server's public IP or domain
+      - WG_DEFAULT_ENDPOINT=${WG_DEFAULT_ENDPOINT:-YOUR_SERVER_IP}
+
+      # Force userspace implementation (fixes issues in some containers/WSL2)
+      - WG_I_PREFER_BUGGY_USERSPACE_TO_POLISHED_KERNEL=1
+
+      # Optional: Generate a secure key with: openssl rand -hex 32
+      - SECRET_KEY=${SECRET_KEY:-}
+
+      # Optional: DNS server for VPN clients
+      - WG_DEFAULT_DNS=${WG_DEFAULT_DNS:-1.1.1.1}
+
+      # Optional: Token expiration settings
+      - ACCESS_TOKEN_EXPIRE_MINUTES=15
+      - REFRESH_TOKEN_EXPIRE_DAYS=7
+      # Optional: Security settings
+      # - CSRF_PROTECTION_ENABLED=true  # Enable in production with HTTPS
+
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/api/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
