@@ -1,7 +1,6 @@
 services:
   tunnbox:
-    build: .
-    image: tunnbox:latest
+    image: pgorbunov/tunnbox:latest
     container_name: tunnbox
     restart: unless-stopped
 

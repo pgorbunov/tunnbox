@@ -16,67 +16,100 @@ A modern, polished web application to manage WireGuard VPN servers. Built with F
 
 ---
 
-## Quick Start with Docker (Recommended)
+## Quick Start (Pre-built Docker Image)
 
-This is the standard way to run the application in production or for personal use.
+The easiest way to run TunnBox is using the official Docker image. You do **not** need to clone the repository.
 
-### Prerequisites
-
-- Ubuntu 22.04+ (or any Linux with kernel 5.6+)
-- Docker and Docker Compose installed
-
-**Install Docker on Ubuntu:**
+### 1. Setup Directory
+Create a directory for your VPN server:
 
 ```bash
-# Install Docker
-curl -fsSL https://get.docker.com | sudo sh
-
-# Add your user to docker group (logout/login required)
-sudo usermod -aG docker $USER
-
-# Install Docker Compose plugin
-sudo apt install -y docker-compose-plugin
+mkdir tunnbox && cd tunnbox
 ```
 
-### Installation
+### 2. Create `docker-compose.yml`
+Save the following content to `docker-compose.yml`:
 
-1. Clone the repository:
-
-```bash
-git clone https://github.com/pgorbunov/tunnbox.git
-cd tunnbox
+```yaml
+services:
+  tunnbox:
+    image: pgorbunov/tunnbox:latest
+    container_name: tunnbox
+    restart: unless-stopped
+    cap_drop: [ALL]
+    cap_add: [NET_ADMIN, SYS_MODULE, MKNOD]
+    security_opt: [no-new-privileges:true]
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+      - net.ipv6.conf.all.forwarding=1
+    ports:
+      - "8000:8000"
+      - "51820:51820/udp"
+    volumes:
+      - ./data/wireguard:/etc/wireguard
+      - ./data/app:/app/data
+      - /lib/modules:/lib/modules:ro
+    environment:
+      - WG_DEFAULT_ENDPOINT=${WG_DEFAULT_ENDPOINT:-YOUR_SERVER_IP}
+      - WG_DEFAULT_DNS=1.1.1.1
 ```
 
-2. Configure your environment:
+### 3. Configure Environment
+
+Download the example environment file:
 
 ```bash
-# Copy the example environment file
-cp .env.example .env
+curl -o .env https://raw.githubusercontent.com/pgorbunov/tunnbox/main/.env.example
+```
 
-# Edit the file to set your server's public IP (WG_DEFAULT_ENDPOINT)
+Edit the file to set `WG_DEFAULT_ENDPOINT` (required) and `SECRET_KEY` (recommended):
+
+```bash
+# Generate a secure key (copy the output)
+openssl rand -hex 32
+
+# Open .env to edit
 nano .env
 ```
 
-3. Start the container:
+### 4. Start the Server
 
 ```bash
 docker compose up -d
 ```
 
-4. Open `http://your-server:8000` and create your admin account.
+Open `http://your-server:8000` to create your admin account.
 
-### Configure Firewall
+---
 
-```bash
-# Allow WireGuard VPN traffic
-sudo ufw allow 51820/udp
+## Build from Source (Advanced)
 
-# Allow web UI access
-sudo ufw allow 8000/tcp
+If you prefer to build the image yourself or contribute to development:
 
-# Enable firewall
-sudo ufw enable
-```
+### Prerequisites
+
+- Ubuntu 22.04+ (or Linux kernel 5.6+)
+- Docker and Docker Compose
+
+### Compile & Run
+
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/pgorbunov/tunnbox.git
+    cd tunnbox
+    ```
+
+2.  **Configure Environment:**
+    ```bash
+    cp .env.example .env
+    nano .env # Set WG_DEFAULT_ENDPOINT
+    ```
+
+3.  **Start with Build:**
+    ```bash
+    docker compose up -d --build
+    ```
 
 ### Docker Commands
 
@@ -84,22 +117,18 @@ sudo ufw enable
 # View logs
 docker compose logs -f
 
-# Stop the service
+# Stop service
 docker compose down
 
-# Restart the service
+# Restart
 docker compose restart
-
-# Rebuild after updates
-git pull
-docker compose up -d --build
 ```
 
 ### Data Persistence
 
-All data is stored in the `./data` directory in the project root:
+All data is stored in `./data` in your project directory:
 
-- `./data/wireguard/` - WireGuard configuration files
+- `./data/wireguard/` - WireGuard configs
 - `./data/app/` - Application database
 
 ---
@@ -120,6 +149,8 @@ Configure via `.env` file or docker-compose environment:
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | JWT token expiration | `15` |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | Refresh token expiration | `7` |
 | `CORS_ORIGINS` | Comma-separated list of allowed origins | - |
+
+> **Note on `SECRET_KEY`**: If slightly undefined, a secure key is auto-generated on startup. However, this means **all user sessions will be invalidated** whenever the container restarts. For production, set a static `SECRET_KEY`.
 
 ### Custom WireGuard Port
 
@@ -276,6 +307,7 @@ Open `http://localhost:5173` to view the app.
 - Non-root user inside container
 
 ---
+
 
 ## License
 
