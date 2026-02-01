@@ -68,10 +68,9 @@
 		}
 	}
 
-	// Set up auto-refresh (every 5 seconds) for real-time stats - silent mode
 	const autoRefresh = useAutoRefresh(async () => {
 		await loadData(true); // true = silent mode
-	}, 5000);
+	});
 
 	onMount(() => {
 		loadData();

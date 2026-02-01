@@ -5,6 +5,7 @@
 	import InterfaceCard from "$lib/components/InterfaceCard.svelte";
 	import StatCard from "$lib/components/StatCard.svelte";
 	import Button from "$lib/components/Button.svelte";
+	import { useAutoRefresh } from "$lib/utils/autoRefresh.svelte";
 	import {
 		Plus,
 		RefreshCw,
@@ -15,51 +16,18 @@
 	} from "lucide-svelte";
 
 	let refreshing = $state(false);
-	let refreshTimer: number | null = null;
 
-	// Get auto-refresh interval from localStorage (default: 10 seconds, 0 = off)
-	function getAutoRefreshInterval(): number {
-		const savedInterval = localStorage.getItem('autoRefreshInterval');
-		return savedInterval ? parseInt(savedInterval) : 10;
-	}
-
-	async function autoRefreshCallback() {
+	const autoRefresh = useAutoRefresh(async () => {
 		await interfaces.load(true);
-	}
-
-	function startAutoRefresh() {
-		if (refreshTimer) clearInterval(refreshTimer);
-
-		const interval = getAutoRefreshInterval();
-		console.log('[Dashboard] Auto-refresh interval:', interval, 'seconds');
-
-		if (interval > 0) {
-			refreshTimer = window.setInterval(autoRefreshCallback, interval * 1000);
-			console.log('[Dashboard] Auto-refresh started with', interval, 'second interval');
-		} else {
-			console.log('[Dashboard] Auto-refresh disabled');
-		}
-	}
+	});
 
 	onMount(() => {
 		interfaces.load();
-		startAutoRefresh();
-
-		// Listen for auto-refresh interval changes from settings page
-		const handleIntervalChange = () => {
-			startAutoRefresh();
-		};
-		window.addEventListener('autoRefreshIntervalChanged', handleIntervalChange);
-
-		return () => {
-			if (refreshTimer) clearInterval(refreshTimer);
-			window.removeEventListener('autoRefreshIntervalChanged', handleIntervalChange);
-		};
 	});
 
 	async function handleRefresh() {
 		refreshing = true;
-		await interfaces.load();
+		await autoRefresh.manualRefresh();
 		refreshing = false;
 	}
 

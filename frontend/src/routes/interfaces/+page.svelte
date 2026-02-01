@@ -8,10 +8,9 @@
 
 	let manualRefreshing = $state(false);
 
-	// Set up auto-refresh (every 5 seconds)
 	const autoRefresh = useAutoRefresh(async () => {
 		await interfaces.load(true); // true = silent mode
-	}, 5000);
+	});
 
 	onMount(() => {
 		interfaces.load();
@@ -37,7 +36,7 @@
 				Interfaces
 			</h1>
 			<p class="text-slate-600 dark:text-slate-400 mt-1">
-				All WireGuard interfaces on this server · Auto-updates every 5s
+				All WireGuard interfaces on this server{autoRefresh.intervalSeconds > 0 ? ` · Auto-updates every ${autoRefresh.intervalSeconds}s` : ''}
 			</p>
 		</div>
 		<div class="flex items-center gap-3">
