@@ -51,8 +51,8 @@ class ServerSettings(BaseModel):
         if ':' in v:
             raise ValueError('Public endpoint should not include port. Port is set per-interface.')
 
-        # Basic validation: allow alphanumeric, dots, dashes (hostname or IP)
-        if not re.match(r'^[a-zA-Z0-9.-]+$', v):
+        # Basic validation: allow alphanumeric, dots, dashes, underscores (hostname or IP)
+        if not re.match(r'^[a-zA-Z0-9._-]+$', v):
             raise ValueError('Invalid hostname or IP address')
 
         return v
