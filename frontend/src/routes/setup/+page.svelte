@@ -32,7 +32,7 @@
 		loading = true;
 		try {
 			await api.setup(username.trim(), password);
-			goto("/login");
+			window.location.href = "/login";
 		} catch (e) {
 			error = e instanceof Error ? e.message : "Setup failed";
 		} finally {
