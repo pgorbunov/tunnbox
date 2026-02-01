@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 from functools import lru_cache
 import secrets
 
@@ -30,6 +31,14 @@ class Settings(BaseSettings):
     rate_limit_redis_url: str = ""
     trusted_proxies: str = ""
     csrf_protection_enabled: bool = False  # Set to True in production
+    cors_origins: list[str] | str = ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v):
+        if isinstance(v, str) and not v.strip().startswith("["):
+            return [i.strip() for i in v.split(",")]
+        return v
 
     def model_post_init(self, __context):
         if self.secret_key == "change-me-in-production":

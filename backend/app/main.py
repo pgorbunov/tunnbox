@@ -175,10 +175,8 @@ async def add_process_time_header(request: Request, call_next):
 
 # CORS middleware (SEC-017)
 # Allow CORS_ORIGINS from environment variable (comma-separated)
-cors_origins = settings.cors_origins if hasattr(settings, 'cors_origins') else [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173"
-]
+# Defaults defined in config.py
+cors_origins = settings.cors_origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
