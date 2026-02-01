@@ -134,9 +134,9 @@ Before deploying to production, verify:
 
 - [ ] `WG_DEFAULT_ENDPOINT` is set to your public IP or domain
 - [ ] `SECRET_KEY` is set to a static value (`openssl rand -hex 32`)
-- [ ] Web UI port (8000) is behind a reverse proxy with HTTPS (see [Production Deployment](/deployment/production))
+- [ ] Web UI port (8000) is behind a reverse proxy with HTTPS (see [Production Deployment](../deployment/production.md))
 - [ ] `CSRF_PROTECTION_ENABLED=true`
 - [ ] WireGuard UDP port(s) are open in your firewall
 - [ ] `CORS_ORIGINS` is set to your actual domain (e.g., `https://vpn.yourdomain.com`)
 - [ ] Data directories (`./data/`) are on persistent storage
-- [ ] Backups are configured (see [Backup & Restore](/guides/backup-restore))
+- [ ] Backups are configured (see [Backup & Restore](../guides/backup-restore.md))

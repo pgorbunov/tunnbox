@@ -146,9 +146,9 @@ Set `WG_ALLOW_CUSTOM_SCRIPTS=true` only if you understand the risks and need cus
 ## Recommendations
 
 1. **Set a static `SECRET_KEY`** — Prevents session invalidation on restart and is required for private key decryption to survive restarts.
-2. **Use HTTPS** — Put TunnBox behind a reverse proxy (Caddy or Nginx) with TLS. See [Production Deployment](/deployment/production).
+2. **Use HTTPS** — Put TunnBox behind a reverse proxy (Caddy or Nginx) with TLS. See [Production Deployment](../deployment/production.md).
 3. **Enable CSRF protection** — Set `CSRF_PROTECTION_ENABLED=true` in production.
 4. **Restrict CORS origins** — Set `CORS_ORIGINS` to your actual domain.
 5. **Configure trusted proxies** — Set `TRUSTED_PROXIES` to your reverse proxy's IP for accurate rate limiting.
-6. **Regular backups** — See [Backup & Restore](/guides/backup-restore).
-7. **Keep updated** — See [Updating](/guides/updating).
+6. **Regular backups** — See [Backup & Restore](./backup-restore.md).
+7. **Keep updated** — See [Updating](./updating.md).

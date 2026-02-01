@@ -53,7 +53,7 @@ If you need to configure a client manually, download the config file and note th
 
 ### Full tunnel (route all traffic through VPN)
 
-Set the client's `AllowedIPs` to `0.0.0.0/0, ::/0`. All traffic goes through the VPN. You must also configure NAT on the interface (see [Interface Management — PostUp/PostDown](/guides/interface-management#postup-and-postdown-scripts)).
+Set the client's `AllowedIPs` to `0.0.0.0/0, ::/0`. All traffic goes through the VPN. You must also configure NAT on the interface (see [Interface Management — PostUp/PostDown](./interface-management.md#postup-and-postdown-scripts)).
 
 ### Split tunnel (only VPN subnet)
 

@@ -57,7 +57,7 @@ PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -t nat -D POSTROUTING -
 ## Security
 
 ### Is the admin panel exposed to the internet?
-By default, port 8000 is mapped to all interfaces. For production, restrict it to localhost and put it behind a reverse proxy with HTTPS. See the [Production Deployment](/deployment/production) guide.
+By default, port 8000 is mapped to all interfaces. For production, restrict it to localhost and put it behind a reverse proxy with HTTPS. See the [Production Deployment](../deployment/production.md) guide.
 
 ### Are private keys stored securely?
 Peer private keys are encrypted using Fernet symmetric encryption with PBKDF2 key derivation (100,000 iterations) and a random salt per key. Server private keys are stored in the WireGuard `.conf` files.
@@ -71,13 +71,13 @@ Login attempts are limited to 5 per minute per IP address. This is tracked in me
 ## Maintenance
 
 ### How do I update TunnBox?
-See the [Updating guide](/guides/updating).
+See the [Updating guide](./updating.md).
 
 ### How do I back up my data?
-See the [Backup & Restore guide](/guides/backup-restore).
+See the [Backup & Restore guide](./backup-restore.md).
 
 ### How do I reset the admin password?
-There is no built-in password reset. You must delete the database (`./data/app/tunnbox.db`), restart the container, and create a new admin account. This removes all stored data. See [Troubleshooting](/guides/troubleshooting) for details.
+There is no built-in password reset. You must delete the database (`./data/app/tunnbox.db`), restart the container, and create a new admin account. This removes all stored data. See [Troubleshooting](./troubleshooting.md) for details.
 
 ### Can I have multiple admin users?
 The current version supports a single admin account created during initial setup. Additional user management is not available in the UI.

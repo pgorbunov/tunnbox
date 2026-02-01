@@ -132,5 +132,5 @@ SQLite doesn't handle heavy concurrent writes well. For most TunnBox deployments
 
 If your issue isn't covered here:
 1. Check the container logs: `docker compose logs tunnbox`
-2. Check the [FAQ](/guides/faq)
+2. Check the [FAQ](./faq.md)
 3. Open an issue on [GitHub](https://github.com/pgorbunov/tunnbox/issues)

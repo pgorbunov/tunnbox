@@ -84,7 +84,7 @@ After connecting the client:
 
 ## Next Steps
 
-- [Interface Management](/guides/interface-management) — PostUp/PostDown scripts, multiple interfaces
-- [Peer Management](/guides/peer-management) — Bulk operations, mobile setup details
-- [Security Guide](/guides/security) — Harden your installation
-- [Production Deployment](/deployment/production) — Set up HTTPS with a reverse proxy
+- [Interface Management](../guides/interface-management.md) — PostUp/PostDown scripts, multiple interfaces
+- [Peer Management](../guides/peer-management.md) — Bulk operations, mobile setup details
+- [Security Guide](../guides/security.md) — Harden your installation
+- [Production Deployment](../deployment/production.md) — Set up HTTPS with a reverse proxy

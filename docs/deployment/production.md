@@ -207,8 +207,8 @@ dpkg-reconfigure -plow unattended-upgrades
 ```
 
 ### Docker Image Updates
-See the [Updating guide](/guides/updating) for safe update procedures.
+See the [Updating guide](../guides/updating.md) for safe update procedures.
 
 ### Production Environment Checklist
 
-Refer to the [Configuration — Production Checklist](/getting-started/configuration#production-checklist) for a complete list of settings to verify before going live.
+Refer to the [Configuration — Production Checklist](../getting-started/configuration.md#production-checklist) for a complete list of settings to verify before going live.

@@ -90,7 +90,7 @@ curl http://localhost:8000/api/health
 docker compose logs tunnbox
 ```
 
-Open `http://your-server:8000` to create your admin account. See [First Setup](/getting-started/first-setup) for a walkthrough.
+Open `http://your-server:8000` to create your admin account. See [First Setup](./first-setup.md) for a walkthrough.
 
 ---
 
@@ -182,5 +182,5 @@ docker stats tunnbox
 
 ## Next Steps
 
-- [Configuration](/getting-started/configuration) — All environment variables
-- [First Setup](/getting-started/first-setup) — Create your admin account and first VPN interface
+- [Configuration](./configuration.md) — All environment variables
+- [First Setup](./first-setup.md) — Create your admin account and first VPN interface
