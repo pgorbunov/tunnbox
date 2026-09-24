@@ -33,6 +33,15 @@
 			.catch(() => undefined);
 	}
 
+	$effect(() => {
+		if (!disableOpen && !regenOpen) {
+			password = '';
+			code = '';
+			codes = null;
+			error = null;
+		}
+	});
+
 	function openDisable() {
 		password = '';
 		code = '';

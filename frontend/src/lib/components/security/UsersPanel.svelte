@@ -1,7 +1,7 @@
 <script lang="ts">
 	/** Admin user management: table, create/edit dialog, deactivate, reset password / MFA, delete. */
 	import { MoreHorizontal, Plus, Users } from 'lucide-svelte';
-	import { api, toApiError } from '$lib/api';
+	import { api, isAbortError, toApiError } from '$lib/api';
 	import type { Role, User } from '$lib/api/types';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { toast } from '$lib/stores/toast.svelte';
@@ -49,19 +49,25 @@
 
 	const me = $derived(auth.user);
 
+	let loadAbort: AbortController | null = null;
 	async function load() {
+		loadAbort?.abort();
+		const ctl = new AbortController();
+		loadAbort = ctl;
 		loading = true;
 		error = null;
 		try {
-			users = await api.users.list();
+			users = await api.users.list(ctl.signal);
 		} catch (err) {
+			if (isAbortError(err)) return;
 			error = toApiError(err).detail;
 		} finally {
-			loading = false;
+			if (!ctl.signal.aborted) loading = false;
 		}
 	}
 	$effect(() => {
 		void load();
+		return () => loadAbort?.abort();
 	});
 
 	function openDialog(m: Mode, u: User | null = null) {

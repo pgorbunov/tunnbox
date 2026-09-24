@@ -35,7 +35,7 @@
 			overview = o;
 			interfaces = i;
 		},
-		{ intervalMs: () => settingsStore.refreshMs }
+		{ intervalMs: () => settingsStore.refreshMs, immediate: false }
 	);
 
 	$effect(() => poller.start());

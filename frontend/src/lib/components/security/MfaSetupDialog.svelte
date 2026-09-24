@@ -43,7 +43,14 @@
 	);
 
 	$effect(() => {
-		if (!open) return;
+		if (!open) {
+			// Never keep the password, TOTP secret/QR or recovery codes around after closing.
+			password = '';
+			setup = null;
+			codes = null;
+			code = '';
+			return;
+		}
 		step = 'password';
 		password = '';
 		setup = null;

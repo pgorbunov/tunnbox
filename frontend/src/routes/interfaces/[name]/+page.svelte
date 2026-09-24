@@ -18,7 +18,7 @@
 		Users,
 		Wifi
 	} from 'lucide-svelte';
-	import { api, toApiError } from '$lib/api';
+	import { api, isAbortError, toApiError } from '$lib/api';
 	import type {
 		AuditEntry,
 		Interface,
@@ -93,7 +93,7 @@
 					api.interfaces.peers(
 						n,
 						{
-							q: query.trim() || undefined,
+							q: debouncedQuery || undefined,
 							status: statusFilter || undefined,
 							sort: sortKey,
 							order: sortOrder
@@ -111,7 +111,7 @@
 				throw err;
 			}
 		},
-		{ intervalMs: () => settingsStore.refreshMs }
+		{ intervalMs: () => settingsStore.refreshMs, immediate: false }
 	);
 	$effect(() => poller.start());
 	$effect(() => liveStatus.bind(poller));
@@ -119,7 +119,7 @@
 		// Re-fetch when any query input changes.
 		void name;
 		void range;
-		void query;
+		void debouncedQuery;
 		void statusFilter;
 		void sortKey;
 		void sortOrder;
@@ -139,22 +139,37 @@
 			void goto(`/interfaces/${encodeURIComponent(name)}`, { replaceState: true, noScroll: true });
 	});
 
+	let activityAbort: AbortController | null = null;
 	async function loadActivity() {
+		activityAbort?.abort();
+		const ctl = new AbortController();
+		activityAbort = ctl;
 		activityLoading = true;
 		activityError = null;
 		try {
-			const res = await api.audit.list({ q: name, page_size: 50 });
+			const res = await api.audit.list({ q: name, page_size: 50 }, ctl.signal);
+			if (ctl.signal.aborted) return;
 			activity = res.items.filter(
 				(a) => a.target === name || a.target?.startsWith(`${name}/`) || a.action.startsWith('interface.')
 			);
 		} catch (err) {
+			if (isAbortError(err)) return;
 			activityError = toApiError(err).detail;
 		} finally {
-			activityLoading = false;
+			if (!ctl.signal.aborted) activityLoading = false;
 		}
 	}
 	$effect(() => {
 		if (tab === 'activity' && auth.can('operator')) void loadActivity();
+		return () => activityAbort?.abort();
+	});
+
+	// Debounce the search box so each keystroke doesn't restart the poller.
+	let debouncedQuery = $state('');
+	$effect(() => {
+		const q = query.trim();
+		const t = setTimeout(() => (debouncedQuery = q), 200);
+		return () => clearTimeout(t);
 	});
 
 	async function toggle(up: boolean) {

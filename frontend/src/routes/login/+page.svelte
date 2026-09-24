@@ -22,7 +22,10 @@
 	function describe(err: unknown): string {
 		const e = toApiError(err);
 		if (e instanceof ApiError) {
-			if (e.status === 423) return 'Account temporarily locked. Try again in about 15 minutes.';
+			if (e.status === 423)
+				return e.detail && !/^account temporarily locked\.?$/i.test(e.detail.trim())
+					? e.detail
+					: 'Account temporarily locked. Please wait a few minutes and try again.';
 			if (e.status === 429) {
 				const s = e.retryAfter ?? 60;
 				return `Too many attempts. Please wait ${s >= 60 ? `${Math.ceil(s / 60)} min` : `${s}s`} and try again.`;
@@ -71,7 +74,12 @@
 		} catch (err) {
 			const e = toApiError(err);
 			error = describe(err);
-			if (e.status === 401 && /expired|invalid.*token/i.test(e.detail)) {
+			// The backend has no dedicated code for a dead MFA token yet; match its
+			// messages ("MFA token invalid or expired" / "MFA token already used").
+			if (
+				e.status === 401 &&
+				(e.code === 'mfa_token_invalid' || /mfa token|expired|already used/i.test(e.detail))
+			) {
 				mfaToken = null;
 				error = 'The sign-in step timed out. Enter your password again.';
 			}

@@ -1,7 +1,7 @@
 <script lang="ts">
 	/** Active sessions with "This device" badge, per-session revoke and "Sign out everywhere else". */
 	import { LogOut, Monitor, Smartphone } from 'lucide-svelte';
-	import { api, toApiError } from '$lib/api';
+	import { api, isAbortError, toApiError } from '$lib/api';
 	import type { Session } from '$lib/api/types';
 	import { toast } from '$lib/stores/toast.svelte';
 	import { formatDateTime, formatRelative } from '$lib/utils/format';
@@ -19,19 +19,25 @@
 	let revokeAllOpen = $state(false);
 	let revokingAll = $state(false);
 
+	let loadAbort: AbortController | null = null;
 	async function load() {
+		loadAbort?.abort();
+		const ctl = new AbortController();
+		loadAbort = ctl;
 		loading = true;
 		error = null;
 		try {
-			sessions = await api.auth.sessions();
+			sessions = await api.auth.sessions(ctl.signal);
 		} catch (err) {
+			if (isAbortError(err)) return;
 			error = toApiError(err).detail;
 		} finally {
-			loading = false;
+			if (!ctl.signal.aborted) loading = false;
 		}
 	}
 	$effect(() => {
 		void load();
+		return () => loadAbort?.abort();
 	});
 
 	function describe(ua: string | null): { label: string; mobile: boolean } {

@@ -36,6 +36,7 @@
 	let exporting = $state(false);
 	let expanded = $state<Set<number>>(new Set());
 	let abort: AbortController | null = null;
+	let forbidden = $state(false);
 
 	let debounced = $state({ username: initialUsername.trim(), q: initialQuery.trim() });
 	let timer: ReturnType<typeof setTimeout> | null = null;
@@ -70,7 +71,9 @@
 			total = res.total;
 		} catch (err) {
 			if (isAbortError(err)) return;
-			error = toApiError(err).detail;
+			const e = toApiError(err);
+			forbidden = e.status === 403;
+			error = e.detail;
 		} finally {
 			if (!signal.aborted) loading = false;
 		}
@@ -81,6 +84,7 @@
 		void pageNo;
 		void pageSize;
 		void load();
+		return () => abort?.abort();
 	});
 
 	$effect(() => {
@@ -213,7 +217,17 @@
 </PageHeader>
 
 <Card flush>
-	{#if error && entries.length === 0}
+	{#if forbidden}
+		<EmptyState
+			title="You don't have access to the audit log"
+			description="Audit entries are visible to operators and admins. Ask an admin if you need this."
+		>
+			{#snippet icon()}<ScrollText class="h-6 w-6" />{/snippet}
+			{#snippet actions()}
+				<Button variant="primary" href="/">Back to dashboard</Button>
+			{/snippet}
+		</EmptyState>
+	{:else if error && entries.length === 0}
 		<ErrorState message={error} onretry={load} />
 	{:else}
 		<Table

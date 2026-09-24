@@ -3,28 +3,35 @@
  * this store only knows who is signed in and where the app is in its lifecycle.
  */
 import { goto } from '$app/navigation';
-import { api, ApiError } from '$lib/api';
+import { api, ApiError, toApiError } from '$lib/api';
 import {
-	clearAccessToken,
+	adoptTokenFromTabs,
+	announceLogout,
+	announceToken,
+	beginLogout,
 	refreshSession,
 	setAccessToken,
 	setRefreshedHandler,
+	setRemoteLogoutHandler,
 	setUnauthorizedHandler
 } from '$lib/api/client';
 import type { LoginResponse, LoginSuccess, Role, User } from '$lib/api/types';
 
-export type AuthStatus = 'booting' | 'anon' | 'authed' | 'setup';
+/** `error` = the server could not be reached during boot; the layout offers a retry. */
+export type AuthStatus = 'booting' | 'anon' | 'authed' | 'setup' | 'error';
 
 const ROLE_RANK: Record<Role, number> = { viewer: 0, operator: 1, admin: 2 };
 
 let status = $state<AuthStatus>('booting');
 let user = $state<User | null>(null);
 let version = $state<string>('');
+let bootError = $state<string | null>(null);
 // True while the first-run wizard continues after the admin was created.
 let setupFlow = $state(false);
 
 function applyLogin(res: LoginSuccess) {
-	setAccessToken(res.access_token, res.expires_in);
+	setAccessToken(res.access_token, res.expires_in, res.user);
+	announceToken(res.access_token, res.expires_in, res.user);
 	user = res.user;
 	status = 'authed';
 }
@@ -32,19 +39,23 @@ function applyLogin(res: LoginSuccess) {
 function redirectToLogin() {
 	const path = window.location.pathname + window.location.search;
 	const next = path && path !== '/' && !path.startsWith('/login') ? `?next=${encodeURIComponent(path)}` : '';
-	void goto(`/login${next}`, { replaceState: true });
+	void goto(`/login${next}`, { replaceState: true }).catch(() => undefined);
 }
 
-setUnauthorizedHandler(() => {
+function dropSession() {
 	if (status === 'authed') {
 		user = null;
 		status = 'anon';
 		redirectToLogin();
 	}
-});
+}
+
+setUnauthorizedHandler(dropSession);
+setRemoteLogoutHandler(dropSession);
 
 setRefreshedHandler((r) => {
 	user = r.user;
+	if (status === 'anon') status = 'authed';
 });
 
 export const auth = {
@@ -56,6 +67,9 @@ export const auth = {
 	},
 	get version() {
 		return version;
+	},
+	get bootError() {
+		return bootError;
 	},
 	get isAuthed() {
 		return status === 'authed';
@@ -74,8 +88,15 @@ export const auth = {
 		return user !== null && ROLE_RANK[user.role] >= ROLE_RANK[min];
 	},
 
-	/** Called once from the root layout. Resolves when status is settled. */
+	/**
+	 * Called from the root layout (and again from its retry button). Moves to
+	 * `anon` only when the server actually rejected the refresh; a transient
+	 * failure becomes `error` so the user is not bounced to the login page.
+	 */
 	async bootstrap(): Promise<void> {
+		status = 'booting';
+		bootError = null;
+		let statusFailed = false;
 		try {
 			const s = await api.auth.status();
 			version = s.version;
@@ -84,16 +105,23 @@ export const auth = {
 				return;
 			}
 		} catch {
-			// If the status endpoint is unreachable we still try to refresh; the
-			// pages will surface a proper error state.
+			statusFailed = true;
 		}
-		const refreshed = await refreshSession();
-		if (refreshed) {
-			user = refreshed.user;
-			status = 'authed';
-		} else {
-			user = null;
-			status = 'anon';
+		try {
+			// Prefer a token another open tab already holds; otherwise refresh (under a cross-tab lock).
+			const refreshed = (await adoptTokenFromTabs()) ?? (await refreshSession());
+			if (refreshed) {
+				user = refreshed.user;
+				status = 'authed';
+			} else {
+				user = null;
+				status = 'anon';
+			}
+		} catch (err) {
+			const e = toApiError(err);
+			bootError =
+				statusFailed || e.isNetwork ? e.detail : `The server returned an error (${e.status}). ${e.detail}`;
+			status = 'error';
 		}
 	},
 
@@ -118,16 +146,18 @@ export const auth = {
 	},
 
 	async logout(): Promise<void> {
+		// Bump the epoch first so a refresh racing with the logout cannot re-install a token.
+		beginLogout();
 		try {
 			await api.auth.logout();
 		} catch (err) {
 			// A failed logout (e.g. session already gone) still clears local state.
 			if (!(err instanceof ApiError)) throw err;
 		} finally {
-			clearAccessToken();
+			announceLogout();
 			user = null;
 			status = 'anon';
-			void goto('/login', { replaceState: true });
+			void goto('/login', { replaceState: true }).catch(() => undefined);
 		}
 	},
 

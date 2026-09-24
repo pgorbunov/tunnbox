@@ -54,7 +54,7 @@
 	let tableView = $state(false);
 	let hasFocus = $state(false);
 
-	const M = { top: 12, right: 72, bottom: 26, left: 60 };
+	const UNITS = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB'];
 
 	$effect(() => {
 		if (!container) return;
@@ -85,13 +85,6 @@
 
 	const enough = $derived(points.length >= 2 && width > 0);
 
-	const plotW = $derived(Math.max(10, width - M.left - M.right));
-	const plotH = $derived(height - M.top - M.bottom);
-
-	const xMin = $derived(times[0] ?? 0);
-	const xMax = $derived(times[times.length - 1] ?? 1);
-	const xSpan = $derived(Math.max(1, xMax - xMin));
-
 	/** Nice upper bound and ticks in byte-friendly steps (1, 2, 5 × 1024^k). */
 	const yAxis = $derived.by(() => {
 		const max = Math.max(1, ...rx, ...tx);
@@ -109,8 +102,28 @@
 		const top = Math.ceil(rel / step) * step * unit;
 		const ticks: number[] = [];
 		for (let v = 0; v <= top + 1e-9; v += step * unit) ticks.push(v);
-		return { top: top || 1, ticks };
+		// One display unit for the whole axis, chosen from the axis top.
+		let k = 0;
+		while (top / 1024 ** (k + 1) >= 1 && k < UNITS.length - 1) k++;
+		const unitVal = 1024 ** k;
+		const suffix = `${UNITS[k]}${asRate ? '/s' : ''}`;
+		const decimals = Number.isInteger((step * unit) / unitVal) ? 0 : 1;
+		const format = (v: number) => (v === 0 ? '0' : `${(v / unitVal).toFixed(decimals)} ${suffix}`);
+		return { top: top || 1, ticks, format };
 	});
+
+	// Left margin follows the widest tick label (≈7px per character at 11px).
+	const M = $derived.by(() => {
+		const widest = Math.max(1, ...yAxis.ticks.map((t) => yAxis.format(t).length));
+		return { top: 12, right: 72, bottom: 26, left: Math.max(40, 12 + widest * 7) };
+	});
+
+	const plotW = $derived(Math.max(10, width - M.left - M.right));
+	const plotH = $derived(height - M.top - M.bottom);
+
+	const xMin = $derived(times[0] ?? 0);
+	const xMax = $derived(times[times.length - 1] ?? 1);
+	const xSpan = $derived(Math.max(1, xMax - xMin));
 
 	const x = (i: number) => M.left + ((times[i] - xMin) / xSpan) * plotW;
 	const y = (v: number) => M.top + plotH - (v / yAxis.top) * plotH;
@@ -350,7 +363,7 @@
 							dominant-baseline="middle"
 							class="fill-fg-subtle text-[11px] tabular"
 						>
-							{t === 0 ? '0' : fmt(t).replace('.0 ', ' ')}
+							{yAxis.format(t)}
 						</text>
 					{/each}
 					<!-- x ticks -->

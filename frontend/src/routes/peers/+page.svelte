@@ -76,7 +76,7 @@
 			total = res.total;
 			interfaces = ifs;
 		},
-		{ intervalMs: () => settingsStore.refreshMs }
+		{ intervalMs: () => settingsStore.refreshMs, immediate: false }
 	);
 	$effect(() => poller.start());
 	$effect(() => liveStatus.bind(poller));

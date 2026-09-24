@@ -16,6 +16,14 @@ export interface UiPrefs {
 }
 
 const PREFS_KEY = 'tb:ui';
+const MIN_REFRESH_S = 3;
+const MAX_REFRESH_S = 300;
+
+/** A finite number of seconds within [3, 300], or null (use the server value). */
+function clampSeconds(v: unknown): number | null {
+	if (typeof v !== 'number' || !Number.isFinite(v)) return null;
+	return Math.min(MAX_REFRESH_S, Math.max(MIN_REFRESH_S, Math.round(v)));
+}
 const DEFAULT_PREFS: UiPrefs = { sidebarCollapsed: false, density: 'comfortable', refreshSeconds: null };
 
 function readPrefs(): UiPrefs {
@@ -23,8 +31,12 @@ function readPrefs(): UiPrefs {
 	try {
 		const raw = localStorage.getItem(PREFS_KEY);
 		if (!raw) return { ...DEFAULT_PREFS };
-		const parsed = JSON.parse(raw) as Partial<UiPrefs>;
-		return { ...DEFAULT_PREFS, ...parsed };
+		const parsed = JSON.parse(raw) as Partial<Record<keyof UiPrefs, unknown>>;
+		return {
+			sidebarCollapsed: parsed.sidebarCollapsed === true,
+			density: parsed.density === 'compact' ? 'compact' : 'comfortable',
+			refreshSeconds: clampSeconds(parsed.refreshSeconds)
+		};
 	} catch {
 		return { ...DEFAULT_PREFS };
 	}
@@ -55,11 +67,13 @@ export const settingsStore = {
 	},
 	/** Effective polling interval in ms (prefers user override, then server, then 10s). */
 	get refreshMs(): number {
-		const s = prefs.refreshSeconds ?? server?.ui_refresh_seconds ?? 10;
-		return Math.max(3, s) * 1000;
+		const s = clampSeconds(prefs.refreshSeconds) ?? clampSeconds(server?.ui_refresh_seconds) ?? 10;
+		return s * 1000;
 	},
 	setPrefs(patch: Partial<UiPrefs>) {
-		prefs = { ...prefs, ...patch };
+		const next = { ...prefs, ...patch };
+		if ('refreshSeconds' in patch) next.refreshSeconds = clampSeconds(patch.refreshSeconds);
+		prefs = next;
 		persist();
 	},
 	toggleSidebar() {

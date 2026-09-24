@@ -14,6 +14,7 @@
 	import Logo from '$lib/components/app/Logo.svelte';
 	import ToastRegion from '$lib/components/app/ToastRegion.svelte';
 	import Spinner from '$lib/components/ui/Spinner.svelte';
+	import ErrorState from '$lib/components/ui/ErrorState.svelte';
 
 	let { children }: { children: Snippet } = $props();
 
@@ -29,30 +30,47 @@
 		void auth.bootstrap();
 	});
 
+	/** Same-origin, non-API path from `?next=`; anything else falls back to `/`. */
+	function safeNext(raw: string | null): string {
+		if (!raw) return '/';
+		try {
+			const u = new URL(raw, location.origin);
+			if (u.origin !== location.origin) return '/';
+			if (u.pathname === '/api' || u.pathname.startsWith('/api/')) return '/';
+			if (u.pathname === '/login' || u.pathname === '/setup') return '/';
+			return `${u.pathname}${u.search}${u.hash}`;
+		} catch {
+			return '/';
+		}
+	}
+
+	function navigate(target: string) {
+		void goto(target, { replaceState: true }).catch(() =>
+			goto('/', { replaceState: true }).catch(() => undefined)
+		);
+	}
+
 	// Route guarding: runs whenever auth status or the path changes.
 	$effect(() => {
 		const status = auth.status;
 		const path = page.url.pathname;
-		if (status === 'booting' || isShare) return;
+		if (status === 'booting' || status === 'error' || isShare) return;
 		if (status === 'setup') {
-			if (path !== '/setup') void goto('/setup', { replaceState: true });
+			if (path !== '/setup') navigate('/setup');
 			return;
 		}
 		if (status === 'anon') {
 			if (!isPublic) {
 				const next = path !== '/' ? `?next=${encodeURIComponent(path + page.url.search)}` : '';
-				void goto(`/login${next}`, { replaceState: true });
+				navigate(`/login${next}`);
 			} else if (path === '/setup') {
-				void goto('/login', { replaceState: true });
+				navigate('/login');
 			}
 			return;
 		}
 		if (status === 'authed') {
 			if (path === '/login' || (path === '/setup' && !auth.setupFlow)) {
-				const next = page.url.searchParams.get('next');
-				void goto(next && next.startsWith('/') && !next.startsWith('//') ? next : '/', {
-					replaceState: true
-				});
+				navigate(safeNext(page.url.searchParams.get('next')));
 			}
 		}
 	});
@@ -79,7 +97,17 @@
 	<title>TunnBox</title>
 </svelte:head>
 
-{#if showBooting}
+{#if auth.status === 'error' && !isShare}
+	<div class="flex min-h-dvh flex-col items-center justify-center gap-4 bg-bg px-4">
+		<Logo size={40} />
+		<ErrorState
+			title="Server unreachable"
+			message={auth.bootError ?? 'TunnBox could not reach its API. Check that the server is running.'}
+			onretry={() => void auth.bootstrap()}
+			retrying={false}
+		/>
+	</div>
+{:else if showBooting}
 	<div class="flex min-h-dvh flex-col items-center justify-center gap-6 bg-bg" aria-busy="true">
 		<Logo size={40} />
 		<Spinner size={22} class="text-fg-subtle" label="Loading TunnBox" />

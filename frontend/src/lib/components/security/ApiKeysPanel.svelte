@@ -1,7 +1,7 @@
 <script lang="ts">
 	/** API keys: list, create dialog (name, scopes, expiry), show-once key, revoke. */
 	import { KeyRound, Plus } from 'lucide-svelte';
-	import { api, toApiError } from '$lib/api';
+	import { api, isAbortError, toApiError } from '$lib/api';
 	import type { ApiKey, ApiKeyScope } from '$lib/api/types';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { toast } from '$lib/stores/toast.svelte';
@@ -72,20 +72,31 @@
 
 	const isAdmin = $derived(auth.can('admin'));
 
+	let loadAbort: AbortController | null = null;
 	async function load() {
+		loadAbort?.abort();
+		const ctl = new AbortController();
+		loadAbort = ctl;
 		loading = true;
 		error = null;
 		try {
-			keys = await api.apiKeys.list(showAll && isAdmin);
+			keys = await api.apiKeys.list(showAll && isAdmin, ctl.signal);
 		} catch (err) {
+			if (isAbortError(err)) return;
 			error = toApiError(err).detail;
 		} finally {
-			loading = false;
+			if (!ctl.signal.aborted) loading = false;
 		}
 	}
 	$effect(() => {
 		void showAll;
 		void load();
+		return () => loadAbort?.abort();
+	});
+
+	// The plaintext key lives only while the show-once dialog is open.
+	$effect(() => {
+		if (!createOpen) createdKey = null;
 	});
 
 	function openCreate() {
@@ -114,8 +125,9 @@
 				scopes: [...scopes],
 				expires_at: expires || null
 			});
-			createdKey = res.key;
-			keys = [res, ...keys];
+			const { key, ...created } = res;
+			createdKey = key;
+			keys = [created, ...keys];
 			toast.success(`API key "${res.name}" created`);
 		} catch (err) {
 			createError = toApiError(err).detail;
@@ -232,7 +244,7 @@
 	bind:open={createOpen}
 	title={createdKey ? 'Copy your new API key' : 'New API key'}
 	size="md"
-	locked={creating}
+	locked={creating || createdKey !== null}
 >
 	{#if createdKey}
 		<div class="flex flex-col gap-4">

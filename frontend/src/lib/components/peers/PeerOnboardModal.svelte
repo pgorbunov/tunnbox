@@ -100,9 +100,18 @@
 		return () => abort?.abort();
 	});
 
-	$effect(() => () => {
+	function clearSecrets() {
 		if (qrUrl) URL.revokeObjectURL(qrUrl);
+		qrUrl = null;
+		config = null;
+		error = null;
+	}
+
+	// Drop the config text and QR blob as soon as the dialog closes (and on unmount).
+	$effect(() => {
+		if (!open) clearSecrets();
 	});
+	$effect(() => () => clearSecrets());
 
 	async function download() {
 		if (!peer) return;

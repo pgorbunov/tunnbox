@@ -65,10 +65,12 @@
 	]);
 </script>
 
-<DropdownMenu {items} label={`Actions for ${peer.name}`}>
-	{#snippet trigger({ toggle, props })}
-		<IconButton label={`Actions for ${peer.name}`} {size} onclick={toggle} {...props}>
-			<MoreHorizontal class="h-4 w-4" />
-		</IconButton>
-	{/snippet}
-</DropdownMenu>
+{#if canWrite}
+	<DropdownMenu {items} label={`Actions for ${peer.name}`}>
+		{#snippet trigger({ toggle, props })}
+			<IconButton label={`Actions for ${peer.name}`} {size} onclick={toggle} {...props}>
+				<MoreHorizontal class="h-4 w-4" />
+			</IconButton>
+		{/snippet}
+	</DropdownMenu>
+{/if}
