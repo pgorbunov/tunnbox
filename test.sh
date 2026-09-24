@@ -1,20 +1,15 @@
 #!/bin/bash
-# Test script for Tunnbox
+# Runs the full local test suite: backend tests, frontend type-check and build.
+set -euo pipefail
+cd "$(dirname "$0")"
 
-set -e
+echo "[1/3] Backend tests"
+(cd backend && WG_BACKEND_MODE=mock python3 -m pytest -q)
 
-echo "========================================"
-echo "  Tunnbox - Running Tests"
-echo "========================================"
+echo "[2/3] Frontend type-check"
+(cd frontend && npm run check)
 
-# Backend tests
-echo ""
-echo "[1/2] Running backend tests..."
-cd backend
-python3 -m pytest -v --tb=short
-cd ..
+echo "[3/3] Frontend build"
+(cd frontend && npm run build)
 
-echo ""
-echo "========================================"
-echo "  All tests passed!"
-echo "========================================"
+echo "All checks passed."

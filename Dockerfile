@@ -18,8 +18,9 @@ RUN go install golang.zx2c4.com/wireguard@latest
 # Stage 3: Production image
 FROM ubuntu:24.04
 
-LABEL maintainer="TunnBox"
-LABEL description="Modern web interface for managing WireGuard VPN (TunnBox)"
+LABEL org.opencontainers.image.title="TunnBox"
+LABEL org.opencontainers.image.description="Self-hosted web interface for managing WireGuard VPN servers"
+LABEL org.opencontainers.image.source="https://github.com/pgorbunov/tunnbox"
 
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
@@ -54,7 +55,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # Copy backend
 COPY backend/ ./backend/
-COPY backend/tests/ ./backend/tests/
+RUN rm -rf ./backend/tests
 
 # Copy built frontend from builder stage
 COPY --from=frontend-builder /app/frontend/build ./frontend/build
@@ -79,11 +80,13 @@ RUN mkdir -p /etc/wireguard /app/data
 ENV APP_HOST=0.0.0.0
 ENV APP_PORT=8000
 ENV DEBUG=false
-ENV DATABASE_URL=sqlite+aiosqlite:////app/data/tunnbox.db
+ENV DATABASE_PATH=/app/data/tunnbox.db
 ENV WG_CONFIG_PATH=/etc/wireguard
 ENV WG_DEFAULT_DNS=1.1.1.1
 ENV ACCESS_TOKEN_EXPIRE_MINUTES=15
 ENV REFRESH_TOKEN_EXPIRE_DAYS=7
+ENV WG_BACKEND_MODE=real
+ENV PYTHONUNBUFFERED=1
 
 # Expose ports
 # 8000 = Web UI
