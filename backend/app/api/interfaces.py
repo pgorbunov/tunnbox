@@ -30,7 +30,7 @@ async def list_interfaces(_: Reader, ctx: Ctx) -> list[Interface]:
 
 @router.post("", response_model=Interface, status_code=status.HTTP_201_CREATED)
 async def create_interface(body: InterfaceCreate, principal: Writer, ctx: Ctx) -> Interface:
-    return Interface(**await service.create_interface(ctx, principal.actor, body))
+    return Interface(**await service.create_interface(ctx, principal.actor, body, is_admin=principal.role == "admin"))
 
 
 @router.get("/{name}", response_model=Interface)
@@ -40,7 +40,7 @@ async def get_interface(name: str, _: Reader, ctx: Ctx) -> Interface:
 
 @router.patch("/{name}", response_model=Interface)
 async def update_interface(name: str, body: InterfaceUpdate, principal: Writer, ctx: Ctx) -> Interface:
-    return Interface(**await service.update_interface(ctx, principal.actor, name, body))
+    return Interface(**await service.update_interface(ctx, principal.actor, name, body, is_admin=principal.role == "admin"))
 
 
 @router.delete("/{name}", status_code=status.HTTP_204_NO_CONTENT)
@@ -86,7 +86,7 @@ async def list_peers(
 
 @router.post("/{name}/peers", response_model=Peer, status_code=status.HTTP_201_CREATED)
 async def create_peer(name: str, body: PeerCreate, principal: PeerWriter, ctx: Ctx) -> Peer:
-    return Peer(**await peers_service.create_peer(ctx, principal.actor, name, body))
+    return Peer(**await peers_service.create_peer(ctx, principal.actor, name, body, is_admin=principal.role == "admin"))
 
 
 @router.get("/{name}/next-ip", response_model=NextIp)

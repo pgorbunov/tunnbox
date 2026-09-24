@@ -28,6 +28,8 @@ class AppContext:
     settings: Settings
     backend: WireGuardBackend
     secrets: SecretBox
+    dummy_hash: str  # bcrypt hash verified for unknown users (timing), at the configured cost
+    scripts_warned: set[str] = field(default_factory=set)  # interfaces whose PostUp/PostDown were dropped
     limiter: RateLimiter = field(default_factory=RateLimiter)
     scheduler: Scheduler = field(default_factory=Scheduler)
     live: LiveCache = field(default_factory=LiveCache)

@@ -1,4 +1,8 @@
-"""Login flow, sessions, refresh rotation, lockout and password changes."""
+"""Login flow, sessions, refresh rotation, lockout and password changes.
+
+All mutating paths open the DB with `immediate=True` so counters, lockouts
+and token rotation are serialised; bcrypt work runs in a bounded thread pool.
+"""
 
 from __future__ import annotations
 
@@ -16,7 +20,7 @@ from app.core.errors import BadRequest, Conflict, Forbidden, Locked, Unauthorize
 from app.core.security import (
     create_jwt,
     decode_jwt,
-    hash_password,
+    hash_password_async,
     iso,
     new_opaque_token,
     now_iso,
@@ -24,7 +28,7 @@ from app.core.security import (
     sha256_hex,
     utcnow,
     validate_password_policy,
-    verify_password,
+    verify_password_async,
 )
 from app.db.connection import connect
 from app.db.repos import api_keys as api_keys_repo
@@ -135,6 +139,11 @@ async def issue_session(ctx: AppContext, db: aiosqlite.Connection, user: dict[st
     return IssuedSession(access, refresh, expires_in, user_response(user), session_id)
 
 
+def _is_locked(user: dict[str, Any]) -> bool:
+    locked_until = parse_iso(user.get("locked_until"))
+    return locked_until is not None and locked_until > utcnow()
+
+
 # --- status / setup ----------------------------------------------------------------
 
 
@@ -147,10 +156,11 @@ async def setup(ctx: AppContext, username: str, password: str, ip: str | None, u
     error = validate_password_policy(password, username)
     if error:
         raise BadRequest(error, code="weak_password")
-    async with connect(ctx.db_path) as db:
+    password_hash = await hash_password_async(password, ctx.settings.bcrypt_rounds)
+    async with connect(ctx.db_path, immediate=True) as db:  # count + insert are one write txn
         if await users_repo.count(db) > 0:
             raise Conflict("Setup already completed")
-        user = await users_repo.create(db, username, hash_password(password, ctx.settings.bcrypt_rounds), "admin", now_iso())
+        user = await users_repo.create(db, username, password_hash, "admin", now_iso())
         issued = await issue_session(ctx, db, user, ip, user_agent)
         await audit.add(db, audit.Actor(user["id"], user["username"], ip), "auth.setup", target=user["username"])
         return issued
@@ -163,50 +173,54 @@ async def login(ctx: AppContext, username: str, password: str, ip: str | None, u
     """Return an IssuedSession, or an MFA token string when a second factor is required."""
     async with connect(ctx.db_path) as db:
         user = await users_repo.get_by_username(db, username)
-        now = utcnow()
-        if user and user["locked_until"] and (parse_iso(user["locked_until"]) or now) > now:
-            verify_password(password, None)  # burn time like a normal attempt
-            raise Locked()
-        ok = verify_password(password, user["password_hash"] if user else None)
-        if not ok or user is None or not user["is_active"]:
+    if user and _is_locked(user):
+        await verify_password_async(password, None, ctx.dummy_hash)  # burn time like a normal attempt
+        raise Locked()
+    ok = await verify_password_async(password, user["password_hash"] if user else None, ctx.dummy_hash)
+    if not ok or user is None or not user["is_active"]:
+        async with connect(ctx.db_path, immediate=True) as db:
             if user is not None:
                 await _record_failure(ctx, db, user, ip)
             else:
                 await audit.add(db, audit.Actor(None, username[:64], ip), "auth.login_failed", target=username[:64])
-            await db.commit()  # keep the failure bookkeeping despite the error we raise next
-            raise Unauthorized(INVALID_CREDENTIALS)
-        if user["totp_enabled"]:
-            return create_jwt(ctx.settings.secret_key, {"sub": str(user["id"])}, MFA_TOKEN_TTL, purpose="mfa")
+        raise Unauthorized(INVALID_CREDENTIALS)
+    if user["totp_enabled"]:
+        return create_jwt(ctx.settings.secret_key, {"sub": str(user["id"]), "jti": uuid.uuid4().hex}, MFA_TOKEN_TTL, purpose="mfa")
+    async with connect(ctx.db_path, immediate=True) as db:
         issued = await issue_session(ctx, db, user, ip, user_agent)
         await audit.add(db, audit.Actor(user["id"], user["username"], ip), "auth.login", target=user["username"])
         return issued
 
 
 async def _record_failure(ctx: AppContext, db: aiosqlite.Connection, user: dict[str, Any], ip: str | None) -> None:
-    failures = int(user["failed_logins"]) + 1
+    """Atomically bump the failure counter and lock the account at the threshold."""
     actor = audit.Actor(user["id"], user["username"], ip)
     await audit.add(db, actor, "auth.login_failed", target=user["username"])
+    failures = await users_repo.increment_failed_logins(db, user["id"], now_iso())
     if failures >= ctx.settings.lockout_threshold:
         locked_until = iso(utcnow() + timedelta(minutes=ctx.settings.lockout_minutes))
         await users_repo.update_fields(db, user["id"], now_iso(), failed_logins=0, locked_until=locked_until)
         await audit.add(db, actor, "auth.locked", target=user["username"], details={"until": locked_until})
         logger.warning("Account %s locked after %d failed logins", user["username"], failures)
-    else:
-        await users_repo.update_fields(db, user["id"], now_iso(), failed_logins=failures)
 
 
 async def login_mfa(ctx: AppContext, mfa_token: str, code: str, ip: str | None, user_agent: str | None) -> IssuedSession:
     claims = decode_jwt(ctx.settings.secret_key, mfa_token, purpose="mfa")
-    if not claims:
+    if not claims or "jti" not in claims or "sub" not in claims:
         raise Unauthorized("MFA token invalid or expired")
-    async with connect(ctx.db_path) as db:
+    async with connect(ctx.db_path, immediate=True) as db:
         user = await users_repo.get(db, int(claims["sub"]))
         if user is None or not user["is_active"] or not user["totp_enabled"]:
             raise Unauthorized("MFA token invalid or expired")
+        if _is_locked(user):
+            raise Locked()
         if not await verify_mfa_code(ctx, db, user, code):
             await _record_failure(ctx, db, user, ip)
-            await db.commit()
+            await db.commit()  # keep the bookkeeping despite the error raised next
             raise Unauthorized("Invalid verification code")
+        expires_at = iso(utcnow() + MFA_TOKEN_TTL)
+        if not await users_repo.consume_mfa_token(db, str(claims["jti"]), expires_at):
+            raise Unauthorized("MFA token already used")
         issued = await issue_session(ctx, db, user, ip, user_agent)
         await audit.add(db, audit.Actor(user["id"], user["username"], ip), "auth.login", target=user["username"], details={"mfa": True})
         return issued
@@ -220,16 +234,13 @@ async def refresh(ctx: AppContext, refresh_token: str | None, ip: str | None, us
     if not refresh_token:
         raise Unauthorized("No refresh token")
     token_hash = sha256_hex(refresh_token)
-    async with connect(ctx.db_path) as db:
+    async with connect(ctx.db_path, immediate=True) as db:
         session = await sessions_repo.get_by_refresh_hash(db, token_hash)
         now = utcnow()
         if session is None:
             stolen_session = await sessions_repo.session_id_for_rotated_hash(db, token_hash)
             if stolen_session:
-                await sessions_repo.revoke(db, stolen_session, iso(now))
-                await audit.add(db, audit.Actor(None, "system", ip), "auth.session_revoked", target=stolen_session, details={"reason": "refresh_token_reuse"})
-                logger.warning("Refresh token reuse detected; session %s revoked", stolen_session)
-                await db.commit()
+                await _revoke_for_reuse(db, stolen_session, ip, now)
             raise Unauthorized("Invalid refresh token")
         if session["revoked_at"]:
             raise Unauthorized("Invalid refresh token")
@@ -245,13 +256,23 @@ async def refresh(ctx: AppContext, refresh_token: str | None, ip: str | None, us
         new_refresh = new_opaque_token(32)
         sliding = now + timedelta(days=ctx.settings.refresh_token_expire_days)
         absolute = parse_iso(session["absolute_expires_at"]) or sliding
-        await sessions_repo.rotate(db, session["id"], token_hash, sha256_hex(new_refresh), iso(now), iso(min(sliding, absolute)))
+        rotated = await sessions_repo.rotate(db, session["id"], token_hash, sha256_hex(new_refresh), iso(now), iso(min(sliding, absolute)))
+        if not rotated:  # someone else rotated it between our read and write: treat as reuse
+            await _revoke_for_reuse(db, session["id"], ip, now)
+            raise Unauthorized("Invalid refresh token")
         access, expires_in = _access_token(ctx, user, session["id"])
         return IssuedSession(access, new_refresh, expires_in, user_response(user), session["id"])
 
 
+async def _revoke_for_reuse(db: aiosqlite.Connection, session_id: str, ip: str | None, now: Any) -> None:
+    await sessions_repo.revoke(db, session_id, iso(now))
+    await audit.add(db, audit.Actor(None, "system", ip), "auth.session_revoked", target=session_id, details={"reason": "refresh_token_reuse"})
+    await db.commit()
+    logger.warning("Refresh token reuse detected; session %s revoked", session_id)
+
+
 async def logout(ctx: AppContext, principal: Principal | None, refresh_token: str | None) -> None:
-    async with connect(ctx.db_path) as db:
+    async with connect(ctx.db_path, immediate=True) as db:
         session_id = principal.session_id if principal and principal.is_session else None
         if session_id is None and refresh_token:
             session = await sessions_repo.get_by_refresh_hash(db, sha256_hex(refresh_token))
@@ -283,17 +304,25 @@ async def principal_from_access_token(ctx: AppContext, token: str, ip: str | Non
 # --- password & sessions -------------------------------------------------------------
 
 
+async def verify_current_password(ctx: AppContext, user: dict[str, Any], password: str) -> None:
+    """Raise 403 unless `password` is the user's current password."""
+    if not await verify_password_async(password, user["password_hash"], ctx.dummy_hash):
+        raise Forbidden("Password is incorrect")
+
+
 async def change_password(ctx: AppContext, principal: Principal, current: str, new: str) -> None:
     async with connect(ctx.db_path) as db:
         user = await users_repo.get(db, principal.user_id)
-        assert user is not None
-        if not verify_password(current, user["password_hash"]):
-            raise Forbidden("Current password is incorrect")
-        error = validate_password_policy(new, user["username"])
-        if error:
-            raise BadRequest(error, code="weak_password")
+    assert user is not None
+    if not await verify_password_async(current, user["password_hash"], ctx.dummy_hash):
+        raise Forbidden("Current password is incorrect")
+    error = validate_password_policy(new, user["username"])
+    if error:
+        raise BadRequest(error, code="weak_password")
+    password_hash = await hash_password_async(new, ctx.settings.bcrypt_rounds)
+    async with connect(ctx.db_path, immediate=True) as db:
         now = now_iso()
-        await users_repo.update_fields(db, user["id"], now, password_hash=hash_password(new, ctx.settings.bcrypt_rounds), password_changed_at=now)
+        await users_repo.update_fields(db, user["id"], now, password_hash=password_hash, password_changed_at=now)
         await sessions_repo.revoke_all_for_user(db, user["id"], now, except_id=principal.session_id)
         await audit.add(db, principal.actor, "auth.password_changed", target=user["username"])
 
@@ -316,7 +345,7 @@ async def list_sessions(ctx: AppContext, principal: Principal) -> list[dict[str,
 
 
 async def revoke_session(ctx: AppContext, principal: Principal, session_id: str) -> None:
-    async with connect(ctx.db_path) as db:
+    async with connect(ctx.db_path, immediate=True) as db:
         session = await sessions_repo.get(db, session_id)
         if session is None or session["user_id"] != principal.user_id:
             raise Forbidden("Session not found")
@@ -325,7 +354,7 @@ async def revoke_session(ctx: AppContext, principal: Principal, session_id: str)
 
 
 async def revoke_other_sessions(ctx: AppContext, principal: Principal) -> None:
-    async with connect(ctx.db_path) as db:
+    async with connect(ctx.db_path, immediate=True) as db:
         count = await sessions_repo.revoke_all_for_user(db, principal.user_id, now_iso(), except_id=principal.session_id)
         await audit.add(db, principal.actor, "auth.session_revoked", target="all", details={"count": count})
 

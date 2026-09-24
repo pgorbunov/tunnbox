@@ -19,7 +19,7 @@ async def test_viewer_is_read_only(client: AsyncClient, admin: Session) -> None:
     assert (await viewer.get("/api/settings")).status_code == 200
     # viewer can manage own security
     assert (await viewer.get("/api/auth/sessions")).status_code == 200
-    assert (await viewer.post("/api/mfa/setup")).status_code == 200
+    assert (await viewer.post("/api/mfa/setup", json={"password": "another-strong-pass"})).status_code == 200
 
     r = await operator.post("/api/interfaces", json={"name": "wg0", "address": "10.8.0.1/24", "listen_port": 51820})
     assert r.status_code == 201
@@ -66,7 +66,7 @@ async def test_api_key_lifecycle_and_scopes(client: AsyncClient, admin: Session)
     assert r.status_code == 403
     # keys cannot touch auth/mfa/api-keys
     assert (await client.get("/api/auth/me", headers=bearer)).status_code == 403
-    assert (await client.post("/api/mfa/setup", headers=bearer)).status_code == 403
+    assert (await client.post("/api/mfa/setup", headers=bearer, json={"password": "x"})).status_code == 403
     assert (await client.get("/api/api-keys", headers=bearer)).status_code == 403
     assert (await client.get("/api/users", headers=bearer)).status_code == 403
 

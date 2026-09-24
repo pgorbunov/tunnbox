@@ -63,7 +63,7 @@ async def get_peer(peer_id: int, _: Reader, ctx: Ctx) -> Peer:
 
 @router.patch("/{peer_id}", response_model=Peer)
 async def update_peer(peer_id: int, body: PeerUpdate, principal: Writer, ctx: Ctx) -> Peer:
-    return Peer(**await service.update_peer(ctx, principal.actor, peer_id, body))
+    return Peer(**await service.update_peer(ctx, principal.actor, peer_id, body, is_admin=principal.role == "admin"))
 
 
 @router.delete("/{peer_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -88,14 +88,15 @@ async def rotate_keys(peer_id: int, principal: Writer, ctx: Ctx) -> Peer:
 
 
 @router.get("/{peer_id}/config", response_class=PlainTextResponse)
-async def client_config(peer_id: int, principal: Reader, ctx: Ctx, allowed_ips: str | None = Query(default=None, max_length=2000)) -> PlainTextResponse:
-    text, row = await service.client_config(ctx, peer_id, _override(allowed_ips), actor=principal.actor)
+async def client_config(peer_id: int, principal: Writer, ctx: Ctx, allowed_ips: str | None = Query(default=None, max_length=2000)) -> PlainTextResponse:
+    """Contains the peer's private key and PSK: operator role or `peers:write` scope required."""
+    text, row = await service.client_config(ctx, peer_id, _override(allowed_ips), actor=principal.actor, fmt="conf")
     return PlainTextResponse(text, headers={"Content-Disposition": f'attachment; filename="{_filename(row["name"])}"'})
 
 
 @router.get("/{peer_id}/qr")
-async def client_qr(peer_id: int, _: Reader, ctx: Ctx, allowed_ips: str | None = Query(default=None, max_length=2000)) -> Response:
-    text, _row = await service.client_config(ctx, peer_id, _override(allowed_ips))
+async def client_qr(peer_id: int, principal: Writer, ctx: Ctx, allowed_ips: str | None = Query(default=None, max_length=2000)) -> Response:
+    text, _row = await service.client_config(ctx, peer_id, _override(allowed_ips), actor=principal.actor, fmt="qr")
     return Response(content=service.qr_png(text), media_type="image/png", headers={"Cache-Control": "no-store"})
 
 

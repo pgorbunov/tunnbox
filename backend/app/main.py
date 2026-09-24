@@ -12,9 +12,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import MutableHeaders
 from starlette.exceptions import HTTPException  # base class: also raised by StaticFiles
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app import __version__
 from app.api.deps import request_is_https
@@ -25,7 +26,7 @@ from app.core.crypto import SecretBox
 from app.core.csp import DOCS_CSP, build_app_csp, inline_script_hashes
 from app.core.errors import AppError
 from app.core.logging import configure_logging
-from app.core.security import now_iso
+from app.core.security import make_dummy_hash, now_iso
 from app.db.connection import connect
 from app.db.migrations import run_migrations
 from app.db.repos import settings as settings_repo
@@ -40,26 +41,43 @@ FRONTEND_BUILD = Path(__file__).resolve().parent.parent.parent / "frontend" / "b
 DOCS_PATHS = {"/api/docs", "/api/redoc", "/api/docs/oauth2-redirect"}
 
 
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Adds the security headers and CSP from spec §2.4."""
+def apply_security_headers(headers: MutableHeaders, app_csp: str, path: str, https: bool) -> None:
+    headers["X-Content-Type-Options"] = "nosniff"
+    headers["X-Frame-Options"] = "DENY"
+    headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    headers["Cross-Origin-Resource-Policy"] = "same-origin"
+    headers["Content-Security-Policy"] = DOCS_CSP if path in DOCS_PATHS else app_csp
+    if https:
+        headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
-    def __init__(self, app: FastAPI, app_csp: str) -> None:  # type: ignore[override]
-        super().__init__(app)
+
+class SecurityHeadersMiddleware:
+    """Pure ASGI middleware adding the headers and CSP from spec §2.4.
+
+    Wrapping `send` (rather than BaseHTTPMiddleware) means the headers are
+    present on every response, including 500s produced by exception handlers.
+    """
+
+    def __init__(self, app: ASGIApp, app_csp: str, settings: Settings) -> None:
+        self.app = app
         self.app_csp = app_csp
+        self.settings = settings
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        response = await call_next(request)
-        headers = response.headers
-        headers["X-Content-Type-Options"] = "nosniff"
-        headers["X-Frame-Options"] = "DENY"
-        headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
-        headers["Cross-Origin-Opener-Policy"] = "same-origin"
-        headers["Cross-Origin-Resource-Policy"] = "same-origin"
-        headers["Content-Security-Policy"] = DOCS_CSP if request.url.path in DOCS_PATHS else self.app_csp
-        if request_is_https(request):
-            headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-        return response
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        request = Request(scope)
+        path = scope.get("path", "")
+
+        async def send_with_headers(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                apply_security_headers(MutableHeaders(scope=message), self.app_csp, path, request_is_https(request))
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
 
 
 async def _startup(ctx: AppContext) -> None:
@@ -91,6 +109,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         settings=settings,
         backend=get_backend(settings.backend_mode, settings.config_dir),
         secrets=SecretBox(settings.secret_key),
+        dummy_hash=make_dummy_hash(settings.bcrypt_rounds),
     )
 
     @asynccontextmanager
@@ -113,8 +132,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         debug=settings.debug,
     )
     app.state.ctx = ctx
+    app_csp = build_app_csp(inline_script_hashes(FRONTEND_BUILD / "index.html"))
 
-    app.add_middleware(SecurityHeadersMiddleware, app_csp=build_app_csp(inline_script_hashes(FRONTEND_BUILD / "index.html")))
+    app.add_middleware(SecurityHeadersMiddleware, app_csp=app_csp, settings=settings)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -123,13 +143,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["Content-Type", "Authorization", "X-API-Key", "Accept"],
     )
 
-    _install_error_handlers(app, settings)
+    _install_error_handlers(app, settings, app_csp)
     app.include_router(api_router)
     _mount_frontend(app)
     return app
 
 
-def _install_error_handlers(app: FastAPI, settings: Settings) -> None:
+def _install_error_handlers(app: FastAPI, settings: Settings, app_csp: str) -> None:
     @app.exception_handler(AppError)
     async def app_error_handler(_: Request, exc: AppError) -> JSONResponse:
         return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail, "code": exc.code}, headers=exc.headers)
@@ -150,10 +170,13 @@ def _install_error_handlers(app: FastAPI, settings: Settings) -> None:
         return JSONResponse(status_code=exc.status_code, content={"detail": detail}, headers=dict(exc.headers or {}))
 
     @app.exception_handler(Exception)
-    async def unhandled_handler(_: Request, exc: Exception) -> JSONResponse:
+    async def unhandled_handler(request: Request, exc: Exception) -> JSONResponse:
         logger.exception("Unhandled error: %s", type(exc).__name__)
         detail = f"{type(exc).__name__}: {exc}" if settings.debug else "Internal server error"
-        return JSONResponse(status_code=500, content={"detail": detail, "code": "internal_error"})
+        response = JSONResponse(status_code=500, content={"detail": detail, "code": "internal_error"})
+        # ServerErrorMiddleware sits outside every other middleware, so add the headers here too.
+        apply_security_headers(response.headers, app_csp, request.url.path, request_is_https(request))
+        return response
 
 
 def _index_file() -> Path | None:

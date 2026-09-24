@@ -39,16 +39,23 @@ async def get_by_refresh_hash(db: aiosqlite.Connection, refresh_hash: str) -> di
 
 async def rotate(
     db: aiosqlite.Connection, session_id: str, old_hash: str, refresh_hash: str, now: str, expires_at: str
-) -> None:
-    """Swap in a new refresh hash and remember the old one for reuse detection."""
-    await db.execute(
-        "UPDATE sessions SET refresh_hash = ?, last_used_at = ?, expires_at = ? WHERE id = ?",
-        (refresh_hash, now, expires_at, session_id),
+) -> bool:
+    """Swap in a new refresh hash only if `old_hash` is still current; remember the old one.
+
+    Returns False when the token was already rotated (concurrent or replayed refresh).
+    """
+    cur = await db.execute(
+        "UPDATE sessions SET refresh_hash = ?, last_used_at = ?, expires_at = ? "
+        "WHERE id = ? AND refresh_hash = ? AND revoked_at IS NULL",
+        (refresh_hash, now, expires_at, session_id, old_hash),
     )
+    if (cur.rowcount or 0) != 1:
+        return False
     await db.execute(
         "INSERT OR REPLACE INTO refresh_token_history (refresh_hash, session_id, rotated_at) VALUES (?, ?, ?)",
         (old_hash, session_id, now),
     )
+    return True
 
 
 async def session_id_for_rotated_hash(db: aiosqlite.Connection, refresh_hash: str) -> str | None:

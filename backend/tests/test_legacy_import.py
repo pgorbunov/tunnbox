@@ -68,7 +68,6 @@ PublicKey = {peer2_pub}
 AllowedIPs = 10.0.0.3/32
 """
     )
-    (wg / "broken.conf").write_text("garbage\n")
     return peer_pub, peer2_pub
 
 
@@ -98,6 +97,9 @@ async def test_legacy_import(tmp_path: Path, monkeypatch) -> None:  # noqa: ANN0
                 assert settings["public_endpoint"] == "old.example.com" and settings["default_dns"] == "8.8.8.8"
                 rendered = (tmp_path / "wireguard" / "wg0.conf").read_text()
                 assert peer_pub in rendered and peer2_pub in rendered and "# PublicEndpoint = 203.0.113.5" in rendered
+                backup = tmp_path / "wireguard" / "wg0.conf.v1.bak"
+                assert backup.is_file() and oct(backup.stat().st_mode & 0o777) == "0o600"
+                assert "PostUp = iptables" in backup.read_text()  # original preserved byte for byte
     db = sqlite3.connect(tmp_path / "tunnbox.db")
     tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert "peer_metadata" not in tables and "refresh_tokens" not in tables

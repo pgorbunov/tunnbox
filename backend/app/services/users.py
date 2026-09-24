@@ -6,7 +6,7 @@ from typing import Any
 
 from app.context import AppContext
 from app.core.errors import BadRequest, Conflict, NotFound
-from app.core.security import hash_password, now_iso, validate_password_policy
+from app.core.security import hash_password_async, now_iso, validate_password_policy
 from app.db.connection import connect
 from app.db.repos import users as repo
 from app.schemas.users import UserCreate, UserUpdate
@@ -23,17 +23,21 @@ async def create_user(ctx: AppContext, principal: Principal, data: UserCreate) -
     error = validate_password_policy(data.password, data.username)
     if error:
         raise BadRequest(error, code="weak_password")
-    async with connect(ctx.db_path) as db:
+    password_hash = await hash_password_async(data.password, ctx.settings.bcrypt_rounds)
+    async with connect(ctx.db_path, immediate=True) as db:
         if await repo.get_by_username(db, data.username):
             raise Conflict("Username already exists")
-        user = await repo.create(db, data.username, hash_password(data.password, ctx.settings.bcrypt_rounds), data.role, now_iso())
+        user = await repo.create(db, data.username, password_hash, data.role, now_iso())
         await audit.add(db, principal.actor, "user.created", target=user["username"], details={"role": data.role})
         return user_response(user)
 
 
 async def update_user(ctx: AppContext, principal: Principal, user_id: int, data: UserUpdate) -> dict[str, Any]:
     changes = data.model_dump(exclude_unset=True)
-    async with connect(ctx.db_path) as db:
+    new_hash = None
+    if changes.get("password"):
+        new_hash = await hash_password_async(changes["password"], ctx.settings.bcrypt_rounds)
+    async with connect(ctx.db_path, immediate=True) as db:  # last-admin guard must not race
         user = await repo.get(db, user_id)
         if user is None:
             raise NotFound("User not found")
@@ -50,11 +54,11 @@ async def update_user(ctx: AppContext, principal: Principal, user_id: int, data:
             fields["role"] = changes["role"]
         if "is_active" in changes and changes["is_active"] is not None:
             fields["is_active"] = 1 if changes["is_active"] else 0
-        if changes.get("password"):
+        if new_hash is not None:
             error = validate_password_policy(changes["password"], user["username"])
             if error:
                 raise BadRequest(error, code="weak_password")
-            fields["password_hash"] = hash_password(changes["password"], ctx.settings.bcrypt_rounds)
+            fields["password_hash"] = new_hash
             fields["password_changed_at"] = now_iso()
         if fields:
             await repo.update_fields(db, user_id, now_iso(), **fields)
@@ -67,7 +71,7 @@ async def update_user(ctx: AppContext, principal: Principal, user_id: int, data:
 
 
 async def delete_user(ctx: AppContext, principal: Principal, user_id: int) -> None:
-    async with connect(ctx.db_path) as db:
+    async with connect(ctx.db_path, immediate=True) as db:
         user = await repo.get(db, user_id)
         if user is None:
             raise NotFound("User not found")

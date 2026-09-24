@@ -1,4 +1,10 @@
-"""SQLite connection helper (WAL, foreign keys, Row factory, auto commit)."""
+"""SQLite connection helper (WAL, foreign keys, Row factory, auto commit).
+
+Mutating code paths open the connection with `immediate=True`, which issues
+`BEGIN IMMEDIATE` up front so the write lock is taken *before* any SELECT.
+That makes every "read then write" sequence serialisable instead of racing
+on stale reads.
+"""
 
 from __future__ import annotations
 
@@ -13,7 +19,7 @@ Row = aiosqlite.Row
 
 
 @asynccontextmanager
-async def connect(path: Path | str) -> AsyncIterator[aiosqlite.Connection]:
+async def connect(path: Path | str, *, immediate: bool = False) -> AsyncIterator[aiosqlite.Connection]:
     """Open a connection; commit on clean exit, roll back on error."""
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     db = await aiosqlite.connect(str(path), timeout=30)
@@ -22,6 +28,8 @@ async def connect(path: Path | str) -> AsyncIterator[aiosqlite.Connection]:
         await db.execute("PRAGMA journal_mode=WAL")
         await db.execute("PRAGMA foreign_keys=ON")
         await db.execute("PRAGMA busy_timeout=30000")
+        if immediate:
+            await db.execute("BEGIN IMMEDIATE")
         try:
             yield db
             await db.commit()

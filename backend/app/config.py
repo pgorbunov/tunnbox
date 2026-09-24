@@ -17,6 +17,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 logger = logging.getLogger(__name__)
 
 _DEFAULT_SECRET = "change-me-in-production"
+DEV_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 _RATE_LIMIT_RE = re.compile(r"^\s*(\d+)\s*/\s*(second|minute|hour|\d+\s*s)\s*$", re.IGNORECASE)
 
 
@@ -51,7 +52,7 @@ class Settings(BaseSettings):
     lockout_threshold: int = 8
     lockout_minutes: int = 15
     trusted_proxies: str = ""
-    cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    cors_origins: list[str] | None = None  # default: dev origins when DEBUG, else none
     cookie_secure: str = "auto"  # auto | true | false
     bcrypt_rounds: int = 12
 
@@ -85,11 +86,9 @@ class Settings(BaseSettings):
         if self.database_url:
             self.database_path = _path_from_legacy_url(self.database_url)
         if self.secret_key == _DEFAULT_SECRET or not self.secret_key:
-            self.secret_key = secrets.token_hex(32)
-            logger.warning(
-                "SECRET_KEY not set; using a temporary generated key. "
-                "Sessions and encrypted keys will not survive a restart."
-            )
+            self.secret_key = _load_or_create_secret(Path(self.database_path).parent / ".secret_key")
+        if self.cors_origins is None:
+            self.cors_origins = DEV_ORIGINS if self.debug else []
         return self
 
     # --- Derived helpers -------------------------------------------------
@@ -142,6 +141,27 @@ def _writable(path: Path) -> bool:
     except OSError:
         return False
     return os.access(path, os.W_OK)
+
+
+def _load_or_create_secret(path: Path) -> str:
+    """SECRET_KEY precedence: env, then `<data dir>/.secret_key`, then generate and persist (0600)."""
+    try:
+        if path.is_file():
+            value = path.read_text(encoding="utf-8").strip()
+            if value:
+                return value
+        value = secrets.token_hex(32)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(value + "\n")
+        logger.warning("SECRET_KEY not set; generated one and stored it in %s", path)
+        return value
+    except FileExistsError:
+        return path.read_text(encoding="utf-8").strip() or secrets.token_hex(32)
+    except OSError as exc:
+        logger.warning("SECRET_KEY not set and %s is not writable (%s); using a per-process key", path, exc)
+        return secrets.token_hex(32)
 
 
 def _path_from_legacy_url(url: str) -> str:

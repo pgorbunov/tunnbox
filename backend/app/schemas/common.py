@@ -42,6 +42,12 @@ def validate_interface_name(name: str) -> str:
     return name
 
 
+def _reject_zone(value: str) -> None:
+    """IPv6 zone ids (`fe80::1%eth0`) are host-local and unsafe to put in configs."""
+    if "%" in value:
+        raise ValueError(f"Invalid address: {value}")
+
+
 def normalize_cidr_list(value: str, *, host_only: bool = False) -> str:
     """Validate a comma separated list of CIDRs and normalise spacing."""
     parts = [p.strip() for p in value.split(",") if p.strip()]
@@ -49,6 +55,7 @@ def normalize_cidr_list(value: str, *, host_only: bool = False) -> str:
         raise ValueError("At least one address is required")
     out: list[str] = []
     for part in parts:
+        _reject_zone(part)
         try:
             iface = ipaddress.ip_interface(part)
         except ValueError as exc:
@@ -67,6 +74,7 @@ def normalize_ip_list(value: str | None) -> str | None:
     if not parts:
         return None
     for part in parts:
+        _reject_zone(part)
         try:
             ipaddress.ip_address(part)
         except ValueError as exc:

@@ -13,8 +13,13 @@ class MfaSetupResponse(ApiModel):
     qr_svg: str
 
 
+class MfaSetupRequest(ApiModel):
+    password: str = Field(min_length=1, max_length=128)
+
+
 class MfaEnableRequest(ApiModel):
     code: str = Field(min_length=6, max_length=8)
+    password: str = Field(min_length=1, max_length=128)
 
 
 class MfaDisableRequest(ApiModel):

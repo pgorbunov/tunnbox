@@ -18,6 +18,7 @@ from app.db.repos import sessions as sessions_repo
 from app.db.repos import settings as settings_repo
 from app.db.repos import share_links as share_repo
 from app.db.repos import stats as repo
+from app.db.repos import users as users_repo
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ RANGES: dict[str, tuple[int, int]] = {  # range -> (window seconds, bucket secon
 async def sample(ctx: AppContext) -> int:
     """Poll each enabled+active interface and record per-peer deltas. Returns rows written."""
     written = 0
-    async with connect(ctx.db_path) as db:
+    async with connect(ctx.db_path, immediate=True) as db:
         for iface in await interfaces_repo.list_all(db):
             if not iface["enabled"] or not await ctx.backend.is_active(iface["name"]):
                 continue
@@ -59,9 +60,15 @@ async def sample(ctx: AppContext) -> int:
 async def _record_peer(ctx: AppContext, db: Any, peer: dict[str, Any], entry: Any) -> int:
     now = utcnow()
     peer_id = peer["id"]
-    prev_rx, prev_tx = ctx.live.raw_counters.get(peer_id, (peer["rx_total"], peer["tx_total"]))
-    rx_delta = entry.rx - prev_rx if entry.rx >= prev_rx else entry.rx
-    tx_delta = entry.tx - prev_tx if entry.tx >= prev_tx else entry.tx
+    previous = ctx.live.raw_counters.get(peer_id)
+    if previous is None:
+        # First observation since start: record the baseline only. Comparing the raw counter
+        # against the cumulative total would double count after a restart.
+        rx_delta = tx_delta = 0
+    else:
+        prev_rx, prev_tx = previous
+        rx_delta = entry.rx - prev_rx if entry.rx >= prev_rx else entry.rx
+        tx_delta = entry.tx - prev_tx if entry.tx >= prev_tx else entry.tx
     ctx.live.raw_counters[peer_id] = (entry.rx, entry.tx)
     ctx.live.endpoints[peer_id] = entry.endpoint
     online = entry.latest_handshake is not None and (now - entry.latest_handshake) <= ONLINE_WINDOW
@@ -153,7 +160,7 @@ async def overview(ctx: AppContext, range_key: str) -> dict[str, Any]:
 
 async def retention(ctx: AppContext) -> dict[str, int]:
     now = utcnow()
-    async with connect(ctx.db_path) as db:
+    async with connect(ctx.db_path, immediate=True) as db:
         values = await settings_repo.get_all(db)
         audit_days = int(values["audit_retention_days"] or 90)
         stats_days = int(values["stats_retention_days"] or ctx.settings.stats_retention_days)
@@ -162,6 +169,7 @@ async def retention(ctx: AppContext) -> dict[str, int]:
             "stats": await repo.delete_before(db, iso(now - timedelta(days=stats_days))),
             "sessions": await sessions_repo.delete_expired(db, iso(now - timedelta(days=1))),
             "share_links": await share_repo.delete_expired(db, iso(now)),
+            "mfa_tokens": await users_repo.prune_mfa_tokens(db, iso(now)),
         }
     if any(removed.values()):
         logger.info("Retention removed %s", removed)

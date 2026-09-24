@@ -16,7 +16,8 @@ async def test_sampler_writes_rows_and_stats_respond(client: AsyncClient, admin:
     peers = [await create_peer(admin, name=f"p{i}") for i in range(6)]
     ctx = app.state.ctx
     written = await stats_service.sample(ctx)
-    assert written == 6  # first sample per peer always recorded
+    assert written == 6  # first sample per peer always recorded (baseline, delta 0)
+    assert all(p["rx_total"] == 0 for p in (await admin.get("/api/interfaces/wg0/peers")).json())
     await stats_service.sample(ctx)
     listed = (await admin.get("/api/interfaces/wg0/peers")).json()
     assert any(p["rx_total"] > 0 for p in listed)
@@ -45,7 +46,7 @@ async def test_sampler_writes_rows_and_stats_respond(client: AsyncClient, admin:
 
 async def test_retention_job_runs(client: AsyncClient, admin: Session, app) -> None:  # noqa: ANN001
     removed = await stats_service.retention(app.state.ctx)
-    assert set(removed) == {"audit", "stats", "sessions", "share_links"}
+    assert set(removed) == {"audit", "stats", "sessions", "share_links", "mfa_tokens"}
 
 
 async def test_audit_query_and_export(client: AsyncClient, admin: Session) -> None:

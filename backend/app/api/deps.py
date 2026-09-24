@@ -42,16 +42,21 @@ def _peer_is_trusted(ctx: AppContext, host: str | None) -> bool:
 
 
 def client_ip(request: Request) -> str | None:
-    """Real client IP, honouring X-Forwarded-For only from trusted proxies."""
+    """Real client IP.
+
+    X-Forwarded-For is honoured only when the connecting peer is a trusted
+    proxy; the list is walked right-to-left and every trusted hop is skipped,
+    so a client cannot spoof its address by pre-filling the header.
+    """
     ctx = get_ctx(request)
     host = request.client.host if request.client else None
-    if _peer_is_trusted(ctx, host):
-        forwarded = request.headers.get("x-forwarded-for")
-        if forwarded:
-            first = forwarded.split(",")[0].strip()
-            if first:
-                return first
-    return host
+    if not _peer_is_trusted(ctx, host):
+        return host
+    hops = [h.strip() for h in request.headers.get("x-forwarded-for", "").split(",") if h.strip()]
+    for hop in reversed(hops):
+        if not _peer_is_trusted(ctx, hop):
+            return hop
+    return hops[0] if hops else host
 
 
 def request_is_https(request: Request) -> bool:

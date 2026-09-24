@@ -18,7 +18,7 @@ from app.services import audit, peers
 async def create_link(ctx: AppContext, actor: audit.Actor, peer_id: int, expires_in_hours: int, max_uses: int) -> dict[str, Any]:
     token = new_opaque_token(32)
     expires_at = iso(utcnow() + timedelta(hours=expires_in_hours))
-    async with connect(ctx.db_path) as db:
+    async with connect(ctx.db_path, immediate=True) as db:
         row = await peers_repo.get(db, peer_id)
         if row is None:
             raise NotFound("Peer not found")
@@ -38,22 +38,22 @@ async def create_link(ctx: AppContext, actor: audit.Actor, peer_id: int, expires
 
 
 async def redeem(ctx: AppContext, token: str, ip: str | None) -> dict[str, Any]:
-    """Consume one use of the link and return the peer's config + QR."""
+    """Consume one use of the link atomically and return the peer's config + QR."""
     now = now_iso()
-    async with connect(ctx.db_path) as db:
-        link = await repo.get_by_token_hash(db, sha256_hex(token))
+    token_hash = sha256_hex(token)
+    async with connect(ctx.db_path, immediate=True) as db:
+        link = await repo.redeem(db, token_hash, now)
         if link is None:
-            raise NotFound("Share link not found")
-        if link["expires_at"] <= now:
-            raise Gone("Share link has expired", code="expired")
-        if link["uses"] >= link["max_uses"]:
+            existing = await repo.get_by_token_hash(db, token_hash)
+            if existing is None:
+                raise NotFound("Share link not found")
+            if existing["expires_at"] <= now:
+                raise Gone("Share link has expired", code="expired")
             raise Gone("Share link has already been used", code="exhausted")
-        await repo.record_use(db, link["id"], now)
-        remaining = link["max_uses"] - link["uses"] - 1
-        peer_id = link["peer_id"]
-    config, row = await peers.client_config(ctx, peer_id)
+    remaining = link["max_uses"] - link["uses"]
+    config, row = await peers.client_config(ctx, link["peer_id"])
     async with connect(ctx.db_path) as db:
-        await audit.add(db, audit.Actor(user_id=None, username="anonymous", ip=ip), "peer.share_used", target=f"{row['interface_name']}/{row['name']}", details={"peer_id": peer_id, "remaining_uses": remaining})
+        await audit.add(db, audit.Actor(user_id=None, username="anonymous", ip=ip), "peer.share_used", target=f"{row['interface_name']}/{row['name']}", details={"peer_id": link["peer_id"], "remaining_uses": remaining})
     return {
         "peer_name": row["name"],
         "interface_name": row["interface_name"],

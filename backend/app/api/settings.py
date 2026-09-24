@@ -29,7 +29,7 @@ async def get_settings(_: Reader, ctx: Ctx) -> SettingsResponse:
 @router.patch("", response_model=SettingsResponse)
 async def update_settings(body: SettingsUpdate, principal: Admin, ctx: Ctx) -> SettingsResponse:
     changes = body.model_dump(exclude_unset=True)
-    async with connect(ctx.db_path) as db:
+    async with connect(ctx.db_path, immediate=True) as db:
         if changes:
             await repo.set_many(db, changes, now_iso())
             await audit.add(db, principal.actor, "settings.updated", target="settings", details={"fields": sorted(changes)})

@@ -8,15 +8,19 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import anyio
 import bcrypt
 import pyotp
+from anyio import CapacityLimiter
 from jose import JWTError, jwt
 
 JWT_ALGORITHM = "HS256"
 RECOVERY_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"
+BCRYPT_MAX_BYTES = 72
+TOTP_STEP_SECONDS = 30
 
-# Verified against for unknown usernames so login timing does not leak existence.
-DUMMY_HASH = bcrypt.hashpw(b"tunnbox-dummy-password", bcrypt.gensalt(rounds=12)).decode()
+# bcrypt is CPU bound; keep it off the event loop and bound the worker threads.
+_bcrypt_limiter = CapacityLimiter(4)
 
 WORST_PASSWORDS = frozenset(
     {
@@ -62,14 +66,27 @@ def hash_password(password: str, rounds: int = 12) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=rounds)).decode()
 
 
-def verify_password(password: str, password_hash: str | None) -> bool:
-    """Constant-time-ish verify; unknown users are checked against DUMMY_HASH."""
-    target = password_hash or DUMMY_HASH
+def make_dummy_hash(rounds: int) -> str:
+    """Hash verified for unknown usernames so timing matches a real user at the configured cost."""
+    return hash_password(secrets.token_urlsafe(24), rounds)
+
+
+def verify_password(password: str, password_hash: str | None, dummy_hash: str) -> bool:
+    """Verify against the stored hash, or against `dummy_hash` when there is none (timing)."""
+    target = password_hash or dummy_hash
     try:
         ok = bcrypt.checkpw(password.encode("utf-8"), target.encode())
     except ValueError:
         ok = False
     return ok and password_hash is not None
+
+
+async def hash_password_async(password: str, rounds: int = 12) -> str:
+    return await anyio.to_thread.run_sync(hash_password, password, rounds, limiter=_bcrypt_limiter)
+
+
+async def verify_password_async(password: str, password_hash: str | None, dummy_hash: str) -> bool:
+    return await anyio.to_thread.run_sync(verify_password, password, password_hash, dummy_hash, limiter=_bcrypt_limiter)
 
 
 def validate_password_policy(password: str, username: str) -> str | None:
@@ -78,6 +95,8 @@ def validate_password_policy(password: str, username: str) -> str | None:
         return "Password must be at least 10 characters"
     if len(password) > 128:
         return "Password must be at most 128 characters"
+    if len(password.encode("utf-8")) > BCRYPT_MAX_BYTES:
+        return f"Password must be at most {BCRYPT_MAX_BYTES} bytes when UTF-8 encoded"
     if password.lower() == username.lower():
         return "Password must not equal the username"
     if password.lower() in WORST_PASSWORDS:
@@ -128,11 +147,26 @@ def totp_uri(secret: str, username: str, issuer: str = "TunnBox") -> str:
     return pyotp.TOTP(secret).provisioning_uri(name=username, issuer_name=issuer)
 
 
-def verify_totp(secret: str, code: str) -> bool:
+def totp_step_now() -> int:
+    return int(utcnow().timestamp()) // TOTP_STEP_SECONDS
+
+
+def match_totp_step(secret: str, code: str, valid_window: int = 1) -> int | None:
+    """Return the time step (counter) the code is valid for, or None. Constant-time compare."""
     code = code.strip().replace(" ", "")
     if not code.isdigit() or len(code) != 6:
-        return False
-    return pyotp.TOTP(secret).verify(code, valid_window=1)
+        return None
+    totp = pyotp.TOTP(secret)
+    now_step = totp_step_now()
+    for offset in range(-valid_window, valid_window + 1):
+        step = now_step + offset
+        if hmac.compare_digest(totp.at(step * TOTP_STEP_SECONDS), code):
+            return step
+    return None
+
+
+def verify_totp(secret: str, code: str) -> bool:
+    return match_totp_step(secret, code) is not None
 
 
 def generate_recovery_codes(count: int = 10) -> list[str]:
@@ -151,8 +185,12 @@ def hash_recovery_code(code: str, rounds: int = 12) -> str:
     return hash_password(normalize_recovery_code(code), rounds=rounds)
 
 
-def verify_recovery_code(code: str, code_hash: str) -> bool:
-    return verify_password(normalize_recovery_code(code), code_hash)
+async def hash_recovery_codes_async(codes: list[str], rounds: int = 12) -> list[str]:
+    return [await hash_password_async(normalize_recovery_code(c), rounds) for c in codes]
+
+
+async def verify_recovery_code_async(code: str, code_hash: str) -> bool:
+    return await verify_password_async(normalize_recovery_code(code), code_hash, code_hash)
 
 
 def looks_like_recovery_code(code: str) -> bool:

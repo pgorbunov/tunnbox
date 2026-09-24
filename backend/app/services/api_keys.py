@@ -49,7 +49,7 @@ async def create_key(ctx: AppContext, principal: Principal, data: ApiKeyCreate) 
             raise BadRequest("expires_at must be in the future")
         expires_at = iso(parsed)
     secret = KEY_PREFIX + new_opaque_token(32)
-    async with connect(ctx.db_path) as db:
+    async with connect(ctx.db_path, immediate=True) as db:
         row = await repo.create(
             db,
             user_id=principal.user_id,
@@ -65,7 +65,7 @@ async def create_key(ctx: AppContext, principal: Principal, data: ApiKeyCreate) 
 
 
 async def revoke_key(ctx: AppContext, principal: Principal, key_id: int) -> None:
-    async with connect(ctx.db_path) as db:
+    async with connect(ctx.db_path, immediate=True) as db:
         row = await repo.get(db, key_id)
         if row is None or (row["user_id"] != principal.user_id and principal.role != "admin"):
             raise NotFound("API key not found")

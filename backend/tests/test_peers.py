@@ -55,7 +55,7 @@ async def test_client_config_and_split_tunnel_override(client: AsyncClient, admi
     r = await admin.get(f"/api/peers/{peer['id']}/qr")
     assert r.status_code == 200 and r.headers["content-type"] == "image/png" and r.content[:4] == b"\x89PNG"
     audit = (await admin.get("/api/audit", params={"action": "peer.config_downloaded"})).json()
-    assert audit["total"] == 2
+    assert audit["total"] == 3 and {e["details"]["format"] for e in audit["items"]} == {"conf", "qr"}
 
 
 async def test_peer_update_disable_and_conf_rendering(client: AsyncClient, admin: Session, env: Path) -> None:

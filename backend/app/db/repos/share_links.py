@@ -33,8 +33,20 @@ async def get_by_token_hash(db: aiosqlite.Connection, token_hash: str) -> dict[s
     return await fetch_one(db, "SELECT * FROM share_links WHERE token_hash = ?", (token_hash,))
 
 
-async def record_use(db: aiosqlite.Connection, link_id: int, now: str) -> None:
-    await db.execute("UPDATE share_links SET uses = uses + 1, used_at = ? WHERE id = ?", (now, link_id))
+async def redeem(db: aiosqlite.Connection, token_hash: str, now: str) -> dict[str, Any] | None:
+    """Consume one use atomically; returns the updated row, or None when unusable."""
+    return await fetch_one(
+        db,
+        """UPDATE share_links SET uses = uses + 1, used_at = ?
+           WHERE token_hash = ? AND uses < max_uses AND expires_at > ?
+           RETURNING *""",
+        (now, token_hash, now),
+    )
+
+
+async def delete_for_peer(db: aiosqlite.Connection, peer_id: int) -> int:
+    cur = await db.execute("DELETE FROM share_links WHERE peer_id = ?", (peer_id,))
+    return cur.rowcount or 0
 
 
 async def delete_expired(db: aiosqlite.Connection, now: str) -> int:
