@@ -22,8 +22,8 @@
 		...rest
 	}: Props = $props();
 
-	const hintId = `${id}-hint`;
-	const errorId = `${id}-error`;
+	const hintId = $derived(`${id}-hint`);
+	const errorId = $derived(`${id}-error`);
 </script>
 
 <div class={`flex flex-col gap-1.5 ${className}`}>

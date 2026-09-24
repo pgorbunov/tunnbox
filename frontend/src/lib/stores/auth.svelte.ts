@@ -20,6 +20,8 @@ const ROLE_RANK: Record<Role, number> = { viewer: 0, operator: 1, admin: 2 };
 let status = $state<AuthStatus>('booting');
 let user = $state<User | null>(null);
 let version = $state<string>('');
+// True while the first-run wizard continues after the admin was created.
+let setupFlow = $state(false);
 
 function applyLogin(res: LoginSuccess) {
 	setAccessToken(res.access_token, res.expires_in);
@@ -57,6 +59,12 @@ export const auth = {
 	},
 	get isAuthed() {
 		return status === 'authed';
+	},
+	get setupFlow() {
+		return setupFlow;
+	},
+	finishSetupFlow() {
+		setupFlow = false;
 	},
 	get role(): Role | null {
 		return user?.role ?? null;
@@ -104,6 +112,7 @@ export const auth = {
 
 	async setup(username: string, password: string): Promise<LoginSuccess> {
 		const res = await api.auth.setup({ username, password });
+		setupFlow = true;
 		applyLogin(res);
 		return res;
 	},
