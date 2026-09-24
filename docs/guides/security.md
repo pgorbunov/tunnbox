@@ -34,20 +34,28 @@ X-API-Key: tb_<key>                    # API key, alternate header
 
 ### Multi-Factor Authentication
 
-TOTP-based MFA with recovery codes:
+TOTP-based MFA with recovery codes. Setting up or changing MFA always requires re-entering your
+current password, not just an active session:
 
-1. `POST /api/mfa/setup` — generates a TOTP secret (stored encrypted, not yet enabled), returns
-   `secret`, `otpauth_uri`, and `qr_svg`.
-2. `POST /api/mfa/enable {code}` — verifying a 6-digit code turns MFA on and returns 10 single-use
-   **recovery codes** (`xxxx-xxxx` format), shown once.
+1. `POST /api/mfa/setup {password}` — verifies your password, then generates a TOTP secret
+   (stored encrypted, not yet enabled) and returns `secret`, `otpauth_uri`, and `qr_svg`.
+2. `POST /api/mfa/enable {code, password}` — verifying your password and a 6-digit code turns MFA
+   on and returns 10 single-use **recovery codes** (`xxxx-xxxx` format), shown once.
 3. From then on, `POST /api/auth/login` with correct credentials returns
    `{"mfa_required": true, "mfa_token": "<jwt>"}` (HTTP 200, no session yet) instead of a session.
-   The `mfa_token` is a purpose-scoped JWT valid for 5 minutes.
+   The `mfa_token` is a purpose-scoped JWT valid for 5 minutes, and **single-use**: once it's been
+   consumed by a login/MFA attempt (successful or not — see below) it cannot be replayed.
 4. `POST /api/auth/login/mfa {mfa_token, code}` completes login. `code` accepts either a 6-digit
-   TOTP code (`valid_window=1`, i.e. ±1 time step) or a recovery code — each recovery code works
-   once.
+   TOTP code or a recovery code. A TOTP code is checked against a ±1 time-step window but **cannot
+   be reused within the same time step** once it has been accepted, closing a narrow
+   replay/interception window. Each recovery code works once.
 5. `POST /api/mfa/recovery-codes {password}` regenerates the set (invalidating the old ones).
 6. `POST /api/mfa/disable {password, code}` turns MFA off.
+
+**Failed MFA codes count toward account lockout** the same as failed passwords — repeatedly
+guessing TOTP codes or recovery codes locks the account for `LOCKOUT_MINUTES` after
+`LOCKOUT_THRESHOLD` failures, same as password brute-forcing. See
+[Lockout & Rate Limiting](#lockout--rate-limiting).
 
 **Lost MFA device:** a user without access to their authenticator or recovery codes cannot self
 -recover. An admin can clear their MFA via `POST /api/users/{id}/mfa/reset` (Settings > Users),
@@ -62,7 +70,15 @@ database-level fix.
 |------|--------|
 | `admin` | Everything: users, API keys, all interfaces/peers, settings, backups, audit |
 | `operator` | Create/edit/delete interfaces and peers, read audit log, manage their own password/MFA/sessions |
-| `viewer` | Read-only (`GET`) access everywhere, plus their own password/MFA/sessions |
+| `viewer` | Read-only (`GET`) access, plus their own password/MFA/sessions |
+
+::: warning Peer config, QR and share links require operator
+`GET /api/peers/{id}/config`, `GET /api/peers/{id}/qr`, and `POST /api/peers/{id}/share` all
+require the **operator** role (or an API key with the `peers:write` scope), not just `viewer`/
+`read`, even though they're read-style operations. A viewer or a read-only API key gets `403`.
+This is because a peer's config download exposes its private key and preshared key — the same
+bar as any other write to that peer.
+:::
 
 `require_role("operator")` in the API accepts operator *or* admin. Roles are enforced per
 endpoint; there is no per-interface or per-peer scoping — any operator or admin can manage any
@@ -177,7 +193,17 @@ client IPs and issues correctly-flagged cookies:
   marked `Secure`, or (worse) always required `Secure` when you're testing over plain HTTP. Set it
   explicitly (`true`/`false`) if `auto` doesn't behave as expected for your setup.
 
-See [Production Deployment](../deployment/production.md) for full proxy examples.
+**How `X-Forwarded-For` is parsed:** the header is only trusted at all when the directly
+connecting peer's IP matches `TRUSTED_PROXIES`. The list of hops in the header is then walked
+**right-to-left**, skipping every hop that is itself a trusted proxy, and the first hop found that
+is *not* trusted is taken as the real client IP. This matters with more than one proxy in the
+chain (e.g. a CDN in front of your own reverse proxy): list every hop you actually trust in
+`TRUSTED_PROXIES`, or an untrusted (attacker-controlled) address earlier in the header could be
+picked up as the client IP. A single reverse proxy directly in front of TunnBox (the common case)
+only needs that proxy's own IP/CIDR in `TRUSTED_PROXIES`.
+
+See [Production Deployment](../deployment/production.md#trusted_proxies-and-cookie_secure) for
+full proxy examples.
 
 ## Audit Logging
 
@@ -205,8 +231,9 @@ Query, filter, and export it (operator role or above) at **Audit** in the UI, or
 | Address | Valid CIDR (IPv4 and/or IPv6, comma-separated) |
 | Peer name | Non-empty, reasonable length |
 | Persistent keepalive | 0–65535 seconds |
-| PostUp / PostDown | Ignored unless `WG_ALLOW_CUSTOM_SCRIPTS=true` |
+| PostUp / PostDown | Rejected unless `WG_ALLOW_CUSTOM_SCRIPTS=true`, **and only an admin can set them even then** — an operator's request to set `post_up`/`post_down` is rejected regardless of the flag |
 | Password | 10–128 chars, not the username, not a common weak password |
+| Peer `allowed_ips` | Must be host routes inside the interface's own subnet(s); wider routes are admin-only and `0.0.0.0/0`/`::/0` are never allowed; overlapping or already-assigned addresses return `409`. See [Peer Management](./peer-management.md#server-side-allowed-ips-policy). |
 
 ## Container Security
 

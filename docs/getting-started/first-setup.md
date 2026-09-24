@@ -62,15 +62,15 @@ link.
 Once you're logged in, enable TOTP multi-factor authentication for the admin account:
 
 1. Go to **Settings > Security**.
-2. Click **Enable MFA**. This calls `POST /api/mfa/setup`, which returns a secret, an
-   `otpauth://` URI, and a QR code (`qr_svg`) — scan it with an authenticator app (Google
-   Authenticator, Authy, 1Password, etc.). The secret is stored encrypted but MFA is not yet
-   required at this point.
-3. Enter the 6-digit code from your app to confirm (`POST /api/mfa/enable`). TunnBox returns 10
-   **recovery codes** — store them somewhere safe. Each is single-use and lets you sign in if you
-   lose your authenticator device.
+2. Click **Enable MFA** and confirm your current password. This calls
+   `POST /api/mfa/setup {password}`, which returns a secret, an `otpauth://` URI, and a QR code
+   (`qr_svg`) — scan it with an authenticator app (Google Authenticator, Authy, 1Password, etc.).
+   The secret is stored encrypted but MFA is not yet required at this point.
+3. Enter the 6-digit code from your app, and your password again, to confirm
+   (`POST /api/mfa/enable {code, password}`). TunnBox returns 10 **recovery codes** — store them
+   somewhere safe. Each is single-use and lets you sign in if you lose your authenticator device.
 4. From then on, login is two steps: password, then a 6-digit code (or a recovery code in
-   `xxxx-xxxx` format).
+   `xxxx-xxxx` format). A wrong code counts toward account lockout just like a wrong password.
 
 See [Security](../guides/security.md#multi-factor-authentication) for the full MFA and recovery
 model, and what to do if you lose your device.

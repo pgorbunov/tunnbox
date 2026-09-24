@@ -51,13 +51,23 @@ touching the real network stack.
 ## PostUp and PostDown Scripts
 
 PostUp/PostDown commands run when an interface comes up or goes down — typically NAT masquerade
-rules for full-tunnel clients. They're gated by `WG_ALLOW_CUSTOM_SCRIPTS`:
+rules for full-tunnel clients. Setting them requires **both** an admin role **and**
+`WG_ALLOW_CUSTOM_SCRIPTS=true`:
 
-- **`WG_ALLOW_CUSTOM_SCRIPTS=false`** (default) — the fields are rejected outright; you cannot
-  set `post_up`/`post_down` on an interface at all while this is off.
-- **`WG_ALLOW_CUSTOM_SCRIPTS=true`** — arbitrary commands are accepted and run as **root** inside
-  the container. Only enable this if you understand the risk and need commands beyond what a
-  disabled setting would allow.
+- **Role** — only an **admin** can set `post_up`/`post_down` on an interface, whether creating or
+  editing it. An operator's request to set either field is rejected outright, even when
+  `WG_ALLOW_CUSTOM_SCRIPTS=true` — there's no way for a non-admin to add PostUp/PostDown, since
+  they run as root.
+- **`WG_ALLOW_CUSTOM_SCRIPTS=false`** (default) — the fields are rejected outright for everyone;
+  no one can set `post_up`/`post_down` while this is off.
+- **`WG_ALLOW_CUSTOM_SCRIPTS=true`** — an admin can set arbitrary commands, which run as **root**
+  inside the container. Only enable this if you understand the risk.
+
+If `WG_ALLOW_CUSTOM_SCRIPTS` is turned back off after scripts were already saved on an interface
+(rather than removed), they are **not deleted** from the database, but are **silently omitted**
+from the rendered `.conf` the next time it's regenerated — the interface comes up without them,
+and a warning is logged once per interface. Turning the flag back on makes them take effect again
+without needing to re-enter them.
 
 Typical NAT setup once enabled:
 

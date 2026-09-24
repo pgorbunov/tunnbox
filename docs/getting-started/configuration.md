@@ -17,7 +17,7 @@ Names are case-insensitive and can be set in `.env` (loaded automatically) or di
 
 | Variable | Default | Notes |
 |----------|---------|-------|
-| `SECRET_KEY` | *(none — auto-generated)* | Root secret for signing sessions and encrypting stored private keys. If unset, a key is generated on first start and persisted to `./data/app/.secret_key` by the entrypoint script. **Set a static value in production** — see the warning below. |
+| `SECRET_KEY` | *(none — auto-generated)* | Root secret for signing sessions and encrypting stored private keys. Precedence: the environment variable wins if set; otherwise the app reads `<data dir>/.secret_key` (next to the database, `./data/app/.secret_key` in the default container layout) if it exists, or creates one there (mode `0600`) and reuses it on every subsequent start. Both the entrypoint script and the app itself implement this fallback, so it works whether or not `SECRET_KEY` was exported before `uvicorn` starts. **Set a static value in production** — see the warning below. |
 | `APP_HOST` | `0.0.0.0` | Interface the app binds to inside the container. |
 | `APP_PORT` | `8000` | Port the app listens on inside the container. |
 | `DEBUG` | `false` | Enables verbose error responses (stack traces in JSON). Never enable in production. |
@@ -38,7 +38,7 @@ Names are case-insensitive and can be set in `.env` (loaded automatically) or di
 | `WG_BACKEND_MODE` | `auto` | `auto` (real on Linux with `wg`/`wg-quick` installed, otherwise mock), `real`, or `mock`. |
 | `WG_DEFAULT_ENDPOINT` | `""` | Seeds the runtime setting `public_endpoint` on first start. After that, edit it in Settings instead. |
 | `WG_DEFAULT_DNS` | `1.1.1.1` | Seeds the runtime setting `default_dns` on first start. |
-| `WG_ALLOW_CUSTOM_SCRIPTS` | `false` | Allows arbitrary `PostUp`/`PostDown` commands on interfaces. These run as root inside the container. Leave `false` unless you specifically need commands beyond iptables. |
+| `WG_ALLOW_CUSTOM_SCRIPTS` | `false` | Allows **admins only** to set arbitrary `PostUp`/`PostDown` commands on interfaces (operators can never set them, regardless of this flag). These run as root inside the container. Leave `false` unless you specifically need commands beyond iptables. |
 
 ### Sessions & Auth
 
@@ -56,7 +56,7 @@ Names are case-insensitive and can be set in `.env` (loaded automatically) or di
 | Variable | Default | Notes |
 |----------|---------|-------|
 | `TRUSTED_PROXIES` | `""` | Comma-separated IPs/CIDRs allowed to set `X-Forwarded-For` / `X-Forwarded-Proto`. Required for correct client IPs and `COOKIE_SECURE=auto` behind a proxy. |
-| `CORS_ORIGINS` | dev origins (`http://localhost:5173`, `http://127.0.0.1:5173`) | Comma-separated list of allowed CORS origins. |
+| `CORS_ORIGINS` | empty unless `DEBUG=true` (then the dev origins `http://localhost:5173`, `http://127.0.0.1:5173`) | Comma-separated list of allowed CORS origins. In production (`DEBUG=false`), leave unset unless the frontend is served from a different origin than the API — the app and its API share an origin by default, so no CORS origins are needed there. |
 | `COOKIE_SECURE` | `auto` | `auto` sets the `Secure` cookie flag when the request is HTTPS (directly, or via `X-Forwarded-Proto` from a trusted proxy); `true`/`false` force the flag. |
 
 ### Stats

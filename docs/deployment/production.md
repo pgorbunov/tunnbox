@@ -129,6 +129,14 @@ Both matter as soon as TLS is terminated in front of TunnBox:
   is HTTPS, directly or via a trusted proxy's `X-Forwarded-Proto`. Force `true`/`false` if `auto`
   isn't behaving as expected for your setup (e.g. testing over plain HTTP with a proxy in front).
 
+TunnBox only trusts `X-Forwarded-For` from a directly-connecting peer that matches
+`TRUSTED_PROXIES`, and then walks the header **right-to-left**, skipping every hop that is itself
+a trusted proxy, taking the first untrusted hop as the real client IP. For the single-proxy setups
+above (Caddy or Nginx talking directly to TunnBox), list just that proxy's IP/CIDR. If you add
+another hop in front (a CDN, a second load balancer), include every trusted hop's IP/CIDR in
+`TRUSTED_PROXIES` — otherwise an address an attacker put in the header earlier could be picked up
+as the client IP.
+
 See [Security — reverse proxy configuration](../guides/security.md#reverse-proxy-configuration)
 for the full explanation.
 

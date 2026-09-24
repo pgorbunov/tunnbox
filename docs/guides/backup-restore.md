@@ -82,6 +82,9 @@ TunnBox generate one) **together with** `tunnbox.db`, and keep them in the same 
 
 ### From a tar.gz backup
 
+A full `./data` tar.gz (the manual file-level backup) includes `.secret_key` already, so this
+just works:
+
 ```bash
 docker compose down
 mv ./data ./data-old                 # keep the old data instead of deleting it

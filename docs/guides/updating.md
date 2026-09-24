@@ -16,21 +16,42 @@ your existing `./data/wireguard` and `./data/app` and it upgrades in place:
 
 On first start against existing data:
 
-- **Existing `.conf` files are imported automatically.** Any interface under `WG_CONFIG_PATH` not
-  yet known to the database is parsed and created, along with its peers. This is safe to run
-  against a v1 install's untouched `/etc/wireguard` — TunnBox v2's database was empty until now,
-  so every file it finds gets imported once.
+- **Existing `.conf` files are imported automatically, and the originals are kept.** Any
+  interface under `WG_CONFIG_PATH` not yet known to the database is parsed and imported (interface
+  + peers). Before TunnBox ever re-renders a file it imports, it copies the original to
+  `<name>.conf.v1.bak` (mode `0600`) in the same directory — so you always have the exact file
+  WireGuard was using before the upgrade, even after the app starts rewriting `<name>.conf` itself.
+  Each file's import runs in its own transaction and rolls back cleanly on error, leaving that file
+  untouched if anything goes wrong.
+- **Files using directives TunnBox can't reproduce are skipped, not partially imported.** If an
+  interface's `[Interface]` section uses `Table`, `FwMark`, `PreUp`, `PreDown`, or `SaveConfig`, or
+  any peer has an `Endpoint` line, that whole file is left alone (not imported, not renamed to
+  `.v1.bak`) and a warning is logged with the reason. TunnBox's renderer doesn't support those
+  directives, so importing and later re-rendering the file would silently drop them. To migrate
+  such a file by hand:
+  1. Remove the unsupported line(s) if you don't need them (most setups don't need `PreUp`/
+     `PreDown`/`SaveConfig`/`Table`/`FwMark` — `PostUp`/`PostDown` are fully supported), or keep
+     the file entirely outside TunnBox (rename it so it doesn't end in `.conf` under
+     `WG_CONFIG_PATH`, or move it elsewhere) and manage that interface separately.
+  2. Remove a peer's `Endpoint` line — it's a client-config concept, not something a server config
+     normally needs; TunnBox generates it in *rendered client* configs from the interface's public
+     endpoint, not from a stored server-side peer field.
+  3. Once the file has none of the unsupported directives, restart the container (or otherwise
+     trigger a rescan) and it will be imported on the next startup.
 - **Peer names are recovered from the v1 database** if present. v1 stored names and (for peers
   created through v1) encrypted private keys in a `peer_metadata` table, matched to imported peers
   by interface name + public key. If a matching v1 database is detected (via legacy tables), this
-  metadata is used to fill in names and private keys during the same startup import, then the
-  legacy table is dropped. Peers with no matching metadata are imported with a placeholder name
-  and no stored private key (their client config can't be re-downloaded, but the peer still works
-  — see [Peer Management](./peer-management.md)).
+  metadata is used to fill in names and private keys during the same startup import; the legacy
+  table is dropped only once every file has imported cleanly. Peers with no matching metadata are
+  imported with a placeholder name and no stored private key (their client config can't be
+  re-downloaded, but the peer still works — see [Peer Management](./peer-management.md)).
+- **User accounts and roles carry over.** v1's `is_admin` flag maps to role `admin`; every other
+  v1 user becomes `viewer` (the most restrictive role) — promote anyone who needs to manage
+  interfaces/peers to `operator` afterward under **Settings > Users**.
+- **v1 audit history is migrated** into the new `audit_logs` table (action names are mapped to
+  v2's naming, e.g. `login` → `auth.login`), so your existing audit trail isn't lost.
 - **All existing sessions are invalidated.** v1's session/token format is different from v2's; every
   user (including admins) has to log in again after the upgrade. This is expected, not a bug.
-- User accounts carry over: v1's `is_admin` flag maps to role `admin`; everyone else becomes
-  `operator` or should be assigned a role afterward under **Settings > Users**.
 
 After upgrading, log back in, confirm your interfaces and peers look right, and consider enabling
 MFA on admin accounts (v1 had no MFA support) — see [First Setup](../getting-started/first-setup.md#enabling-mfa).

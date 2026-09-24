@@ -33,6 +33,22 @@ curl https://vpn.example.com/api/interfaces/wg0/next-ip \
 # {"allowed_ips": "10.8.0.2/32"}
 ```
 
+### Server-Side AllowedIPs Policy
+
+When you set `allowed_ips` explicitly (instead of `"auto"`), it's validated against the
+interface's own network:
+
+- Each address must be a **host route inside the interface's subnet(s)** (e.g. `10.8.0.5/32`
+  within a `10.8.0.0/24` interface) — this is what the server actually accepts as that peer's
+  source address, not the routes the client sends traffic to (that's `client_allowed_ips`, see
+  split tunnel below).
+- A **wider route** (anything less specific than a single host, e.g. `10.8.0.0/28`) is
+  **admin-only** — an operator's request with a non-host route is rejected.
+- **`0.0.0.0/0` and `::/0` are never allowed** here, regardless of role — a default route as a
+  peer's server-side `allowed_ips` would let that peer claim traffic for the whole interface.
+- An address that duplicates or overlaps another peer's already-assigned `allowed_ips` on the
+  same interface returns `409 Conflict`.
+
 ## Split Tunnel Presets
 
 The peer's own `client_allowed_ips` field controls what the *client* routes through the tunnel
@@ -74,7 +90,8 @@ device's config was compromised or lost.
 ## Onboarding: QR, Download, Share Link
 
 After creating a peer (or from its row menu), three equivalent ways to hand the config to the end
-user:
+user. All three require the **operator** role (or an API key with `peers:write`) — a viewer or a
+read-only API key gets `403`, because each one exposes the peer's private key and preshared key.
 
 - **QR code** — `GET /api/peers/{id}/qr` returns a PNG the client scans in the WireGuard app.
 - **Download** — `GET /api/peers/{id}/config` returns the `.conf` file as an attachment

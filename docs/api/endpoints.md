@@ -109,10 +109,14 @@ Session principals only — API keys cannot call these.
 
 | Method & Path | Notes |
 |---|---|
-| `POST /setup` | `{secret, otpauth_uri, qr_svg}`; not enabled yet |
-| `POST /enable` | `{code}` → `{recovery_codes: string[]}` (10 codes, shown once) |
+| `POST /setup` | `{password}` → `{secret, otpauth_uri, qr_svg}`; not enabled yet |
+| `POST /enable` | `{code, password}` → `{recovery_codes: string[]}` (10 codes, shown once) |
 | `POST /disable` | `{password, code}` → `204` |
 | `POST /recovery-codes` | `{password}` → `{recovery_codes: string[]}` (regenerate) |
+
+A TOTP `code` cannot be reused within its time step, and the `mfa_token` from `/api/auth/login` is
+single-use; failed codes count toward account lockout the same as failed passwords. See
+[Security — multi-factor authentication](../guides/security.md#multi-factor-authentication).
 
 ## api-keys (`/api/api-keys`)
 
@@ -163,8 +167,8 @@ Session principals only.
 | `POST /api/peers/{id}/enable` | operator | `peers:write` | |
 | `POST /api/peers/{id}/disable` | operator | `peers:write` | |
 | `POST /api/peers/{id}/rotate-keys` | operator | `peers:write` | New keypair + PSK; old client config stops working |
-| `GET /api/peers/{id}/config` | viewer | `read` | `text/plain`, attachment `<name>.conf`; `?allowed_ips=` override; `404` if no stored private key |
-| `GET /api/peers/{id}/qr` | viewer | `read` | `image/png`; same override param |
+| `GET /api/peers/{id}/config` | operator | `peers:write` | `text/plain`, attachment `<name>.conf`; `?allowed_ips=` override; `404` if no stored private key. Requires operator/`peers:write` because it exposes the private key and PSK |
+| `GET /api/peers/{id}/qr` | operator | `peers:write` | `image/png`; same override param and requirement |
 | `POST /api/peers/{id}/share` | operator | `peers:write` | `{expires_in_hours?: 24, max_uses?: 1}` → `{url_path, token, expires_at, max_uses}` |
 | `GET /api/peers/{id}/stats` | viewer | `read` | Same shape as interface stats |
 

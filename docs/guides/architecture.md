@@ -53,10 +53,16 @@ At startup, the app scans `WG_CONFIG_PATH` for any `<name>.conf` file that isn't
 interface in the database. For each one found, it parses the file and creates a matching
 interface (and its peers) in the database — this is how a v1 installation (or any hand-managed
 WireGuard setup) upgrades transparently: point TunnBox at an existing `/etc/wireguard`, and it
-adopts what's there on first boot. If a legacy `peer_metadata` table exists from a v1 database, it
-is consulted to recover peer names and stored private keys (matched by interface name + public
-key) before being dropped. Import is idempotent and never overwrites a database row that already
-exists — it only fills in interfaces/peers that aren't yet known.
+adopts what's there on first boot. Before rewriting any file it imports, the original is copied to
+`<name>.conf.v1.bak`; a file that uses directives the renderer can't reproduce (`Table`, `FwMark`,
+`PreUp`, `PreDown`, `SaveConfig`, or a peer `Endpoint`) is left untouched and skipped with a
+logged warning instead. If a legacy `peer_metadata` table exists from a v1 database, it is
+consulted to recover peer names and stored private keys (matched by interface name + public key)
+and dropped only once every file has imported cleanly. Import runs per-file inside its own
+transaction and rolls back cleanly on error; it's idempotent and never overwrites a database row
+that already exists — it only fills in interfaces/peers that aren't yet known. See
+[Updating — upgrading from v1](./updating.md#upgrading-from-v1) for the full behavior, including
+how to migrate a skipped file by hand.
 
 ## Background Jobs
 
