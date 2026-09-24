@@ -1,90 +1,83 @@
 # First Setup
 
-After installing TunnBox, follow this guide to get your VPN up and running.
+TunnBox's setup wizard runs the first time you open the app, and only while the database has no
+users. It has three steps: **create the admin account**, **confirm the endpoint**, and **create
+your first interface**.
 
 ## Step 1: Create the Admin Account
 
-When you first open TunnBox in your browser (`http://your-server:8000`), you'll see the setup screen.
+Open `http://your-server:8000` in a browser. Because no users exist yet, you land on `/setup`.
 
-1. Enter a **username** for the admin account.
-2. Enter a **password** (minimum 8 characters).
-3. Click **Create Account**.
+1. Choose a **username** and **password**.
+   - Password must be 10–128 characters, must not equal the username, and must not be one of a
+     small list of common weak passwords.
+2. Submit the form.
 
-This endpoint is only available when no users exist in the database. Once an admin account is created, the setup page is disabled permanently.
+This calls `POST /api/auth/setup`, which only succeeds when no users exist (it returns `409` if
+an admin has already been created). It creates the first user with role `admin` and logs you in
+immediately — no separate login step.
 
 ::: tip
-You can verify the setup status programmatically:
+Check setup status without logging in:
 ```bash
-curl http://your-server:8000/api/auth/check-setup
-# Returns: {"setup_required": true} or {"setup_required": false}
+curl http://your-server:8000/api/auth/status
+# {"setup_required": true, "version": "2.0.0"}
 ```
 :::
 
-## Step 2: Log In
+## Step 2: Confirm the Server Endpoint
 
-After creating the admin account, log in with your credentials. You'll be taken to the dashboard.
+The wizard prefills the public endpoint from `WG_DEFAULT_ENDPOINT` (or the auto-detected public
+IP set by the Docker entrypoint). Confirm or correct it — this is the address WireGuard clients
+will connect to, so it must be reachable from the internet, not `127.0.0.1` or a private IP
+unless clients are on the same LAN.
 
-## Step 3: Configure Server Settings
+This value is the `public_endpoint` runtime setting (`GET`/`PATCH /api/settings`), editable later
+under **Settings > General**.
 
-Before creating interfaces, verify your server settings:
+## Step 3: Create Your First Interface
 
-1. Navigate to **Settings** in the sidebar.
-2. Confirm the **Public Endpoint** is set to your server's public IP or domain. This is the address clients will connect to.
-3. Confirm the **Default DNS** is appropriate (default: `1.1.1.1`).
+The wizard's last step opens the interface creation form (also reachable later at
+`/interfaces?new=1`).
 
-## Step 4: Create Your First Interface
+1. **Name** — e.g. `wg0`. Up to 15 characters, `^[a-zA-Z0-9_=+.-]{1,15}$`, and not one of the
+   reserved names `all`, `default`, `lo`.
+2. **Address** — the server's IP inside the VPN subnet, in CIDR notation, e.g. `10.8.0.1/24`
+   (IPv4 and/or IPv6, comma-separated for dual-stack).
+3. **Listen Port** — the UDP port WireGuard listens on, e.g. `51820`. Must be unique across
+   interfaces and match a port mapped in `docker-compose.yml`.
+4. Optional: DNS, MTU, endpoint override, PostUp/PostDown (only editable when
+   `WG_ALLOW_CUSTOM_SCRIPTS=true`).
 
-1. Click **New Interface** on the dashboard.
-2. Fill in the fields:
-   - **Name**: `wg0` (or any name up to 15 characters)
-   - **Listen Port**: `51820` (must match the port exposed in `docker-compose.yml`)
-   - **Address**: `10.0.0.1/24` (the server's IP within the VPN subnet)
-   - **DNS**: `1.1.1.1` (optional, inherited from server settings)
-3. Click **Save**.
-4. Click the **toggle switch** to bring the interface UP.
+Submitting calls `POST /api/interfaces`. The interface is created enabled by default; on the real
+backend the app brings it up itself — you don't need to run `wg-quick` manually. See
+[Interface Management](../guides/interface-management.md).
 
-::: warning
-The listen port must match the UDP port mapped in your `docker-compose.yml`. If you mapped `51820:51820/udp`, use port `51820`.
-:::
+From here, add your first peer from the interface page — see
+[Peer Management](../guides/peer-management.md) for onboarding via QR code, download, or share
+link.
 
-## Step 5: Add Your First Peer
+## Enabling MFA
 
-1. Select the interface you just created.
-2. Click **Add Peer**.
-3. Fill in:
-   - **Name**: A friendly label (e.g., "My Laptop")
-   - **Allowed IPs**: Set to `auto` to automatically assign the next available IP
-4. Click **Save**.
+Once you're logged in, enable TOTP multi-factor authentication for the admin account:
 
-## Step 6: Connect the Client
+1. Go to **Settings > Security**.
+2. Click **Enable MFA** and confirm your current password. This calls
+   `POST /api/mfa/setup {password}`, which returns a secret, an `otpauth://` URI, and a QR code
+   (`qr_svg`) — scan it with an authenticator app (Google Authenticator, Authy, 1Password, etc.).
+   The secret is stored encrypted but MFA is not yet required at this point.
+3. Enter the 6-digit code from your app, and your password again, to confirm
+   (`POST /api/mfa/enable {code, password}`). TunnBox returns 10 **recovery codes** — store them
+   somewhere safe. Each is single-use and lets you sign in if you lose your authenticator device.
+4. From then on, login is two steps: password, then a 6-digit code (or a recovery code in
+   `xxxx-xxxx` format). A wrong code counts toward account lockout just like a wrong password.
 
-### Mobile (QR Code)
-1. Click the **QR Code** icon next to the peer.
-2. Open the WireGuard app on your phone.
-3. Tap **Add a tunnel** > **Scan from QR code**.
-
-### Desktop (Config File)
-1. Click the **Download** icon next to the peer.
-2. Save the `.conf` file.
-3. Import it into the WireGuard desktop client.
-
-## Step 7: Verify the Connection
-
-After connecting the client:
-
-1. Check the peer status on the TunnBox dashboard — a green indicator shows a recent handshake.
-2. On the client, verify connectivity:
-   ```bash
-   # Ping the VPN server
-   ping 10.0.0.1
-
-   # Check your public IP (if routing all traffic through VPN)
-   curl ifconfig.me
-   ```
+See [Security](../guides/security.md#multi-factor-authentication) for the full MFA and recovery
+model, and what to do if you lose your device.
 
 ## Next Steps
 
-- [Interface Management](../guides/interface-management.md) — PostUp/PostDown scripts, multiple interfaces
-- [Peer Management](../guides/peer-management.md) — Bulk operations, mobile setup details
-- [Security Guide](../guides/security.md) — Harden your installation
-- [Production Deployment](../deployment/production.md) — Set up HTTPS with a reverse proxy
+- [Interface Management](../guides/interface-management.md) — multiple interfaces, PostUp/PostDown
+- [Peer Management](../guides/peer-management.md) — onboarding, split tunnel, expiry, bulk actions
+- [Security](../guides/security.md) — sessions, MFA, roles, API keys, hardening
+- [Production Deployment](../deployment/production.md) — HTTPS via a reverse proxy

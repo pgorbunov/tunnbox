@@ -1,297 +1,194 @@
-from fastapi import FastAPI, Request, HTTPException, status
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse, FileResponse
+"""FastAPI application factory: middleware, error handlers, static SPA, lifespan."""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-import time
-import logging
-import secrets
-import hmac
-import hashlib
 
-from app.config import get_settings
-from app.database import init_db
-from app.routers import auth, interfaces, peers, system, privacy
-from app.routers import settings as settings_router
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import MutableHeaders
+from starlette.exceptions import HTTPException  # base class: also raised by StaticFiles
+from starlette.responses import Response
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-settings = get_settings()
+from app import __version__
+from app.api.deps import request_is_https
+from app.api.router import api_router
+from app.config import Settings, get_settings
+from app.context import AppContext
+from app.core.crypto import SecretBox
+from app.core.csp import DOCS_CSP, build_app_csp, inline_script_hashes
+from app.core.errors import AppError
+from app.core.logging import configure_logging
+from app.core.security import make_dummy_hash, now_iso
+from app.db.connection import connect
+from app.db.migrations import run_migrations
+from app.db.repos import settings as settings_repo
+from app.services import interfaces as interfaces_service
+from app.services import peers as peers_service
+from app.services import stats as stats_service
+from app.services.wireguard import get_backend
+
 logger = logging.getLogger(__name__)
 
-# CSRF protection (SEC-007)
-CSRF_TOKEN_LENGTH = 32
-CSRF_COOKIE_NAME = "csrf_token"
-CSRF_HEADER_NAME = "X-CSRF-Token"
+FRONTEND_BUILD = Path(__file__).resolve().parent.parent.parent / "frontend" / "build"
+DOCS_PATHS = {"/api/docs", "/api/redoc", "/api/docs/oauth2-redirect"}
 
 
-def generate_csrf_token() -> str:
-    """Generate a cryptographically secure CSRF token."""
-    return secrets.token_urlsafe(CSRF_TOKEN_LENGTH)
+def apply_security_headers(headers: MutableHeaders, app_csp: str, path: str, https: bool) -> None:
+    headers["X-Content-Type-Options"] = "nosniff"
+    headers["X-Frame-Options"] = "DENY"
+    headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    headers["Cross-Origin-Resource-Policy"] = "same-origin"
+    headers["Content-Security-Policy"] = DOCS_CSP if path in DOCS_PATHS else app_csp
+    if https:
+        headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
 
-def verify_csrf_token(cookie_token: str, header_token: str) -> bool:
-    """Verify CSRF token using constant-time comparison."""
-    if not cookie_token or not header_token:
-        return False
-    # Use constant-time comparison to prevent timing attacks
-    return hmac.compare_digest(cookie_token, header_token)
+class SecurityHeadersMiddleware:
+    """Pure ASGI middleware adding the headers and CSP from spec §2.4.
+
+    Wrapping `send` (rather than BaseHTTPMiddleware) means the headers are
+    present on every response, including 500s produced by exception handlers.
+    """
+
+    def __init__(self, app: ASGIApp, app_csp: str, settings: Settings) -> None:
+        self.app = app
+        self.app_csp = app_csp
+        self.settings = settings
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        request = Request(scope)
+        path = scope.get("path", "")
+
+        async def send_with_headers(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                apply_security_headers(MutableHeaders(scope=message), self.app_csp, path, request_is_https(request))
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup
-    await init_db()
-
-    # Security warnings
-    if settings.rate_limit_enabled and not settings.rate_limit_redis_url:
-        logger.warning(
-            "Using in-memory rate limiting. For production with multiple workers, "
-            "configure RATE_LIMIT_REDIS_URL."
+async def _startup(ctx: AppContext) -> None:
+    settings = ctx.settings
+    settings.config_dir.mkdir(parents=True, exist_ok=True)
+    async with connect(settings.db_path) as db:
+        await run_migrations(db, now_iso())
+        await settings_repo.ensure_defaults(
+            db,
+            settings_repo.defaults(
+                public_endpoint=settings.wg_default_endpoint,
+                default_dns=settings.wg_default_dns,
+                stats_retention_days=settings.stats_retention_days,
+            ),
+            now_iso(),
         )
+    await interfaces_service.reconcile(ctx)
+    scheduler = ctx.scheduler
+    scheduler.add_job("stats_sampler", lambda: stats_service.sample(ctx), settings.stats_sample_seconds)
+    scheduler.add_job("peer_expiry", lambda: peers_service.expire_peers(ctx), 60)
+    scheduler.add_job("retention", lambda: stats_service.retention(ctx), 3600)
+    scheduler.start()
 
-    yield
-    # Shutdown
+
+def create_app(settings: Settings | None = None) -> FastAPI:
+    settings = settings or get_settings()
+    configure_logging(settings.log_format, settings.debug)
+    ctx = AppContext(
+        settings=settings,
+        backend=get_backend(settings.backend_mode, settings.config_dir),
+        secrets=SecretBox(settings.secret_key),
+        dummy_hash=make_dummy_hash(settings.bcrypt_rounds),
+    )
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        logger.info("TunnBox %s starting (backend=%s, db=%s)", __version__, ctx.backend.mode, settings.db_path)
+        await _startup(ctx)
+        try:
+            yield
+        finally:
+            await ctx.scheduler.stop()
+
+    app = FastAPI(
+        title="TunnBox",
+        description="Self-hosted WireGuard management",
+        version=__version__,
+        lifespan=lifespan,
+        docs_url="/api/docs",
+        redoc_url="/api/redoc",
+        openapi_url="/api/openapi.json",
+        debug=settings.debug,
+    )
+    app.state.ctx = ctx
+    app_csp = build_app_csp(inline_script_hashes(FRONTEND_BUILD / "index.html"))
+
+    app.add_middleware(SecurityHeadersMiddleware, app_csp=app_csp, settings=settings)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "Authorization", "X-API-Key", "Accept"],
+    )
+
+    _install_error_handlers(app, settings, app_csp)
+    app.include_router(api_router)
+    _mount_frontend(app)
+    return app
 
 
-app = FastAPI(
-    title="TunnBox",
-    description="Modern web interface for managing WireGuard VPN servers",
-    version="1.0.0",
-    lifespan=lifespan,
-    docs_url=None,  # Disabled - use /api/docs instead
-    redoc_url=None,  # Disabled - use /api/redoc instead
-    openapi_url="/api/openapi.json",  # Public OpenAPI spec (schema only, no data)
-)
+def _install_error_handlers(app: FastAPI, settings: Settings, app_csp: str) -> None:
+    @app.exception_handler(AppError)
+    async def app_error_handler(_: Request, exc: AppError) -> JSONResponse:
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail, "code": exc.code}, headers=exc.headers)
 
-# Security headers middleware (SEC-005)
-@app.middleware("http")
-async def add_security_headers(request: Request, call_next):
-    response = await call_next(request)
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    @app.exception_handler(RequestValidationError)
+    async def validation_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
+        messages = []
+        for err in exc.errors():
+            loc = ".".join(str(p) for p in err.get("loc", ()) if p != "body")
+            messages.append(f"{loc}: {err.get('msg')}" if loc else str(err.get("msg")))
+        return JSONResponse(status_code=422, content={"detail": "; ".join(messages) or "Validation error", "code": "validation_error"})
 
-    # Only add HSTS header when accessed via HTTPS
-    if request.url.scheme == "https":
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    @app.exception_handler(HTTPException)
+    async def http_error_handler(request: Request, exc: HTTPException) -> Response:
+        if exc.status_code == 404 and not request.url.path.startswith("/api") and _index_file() is not None:
+            return FileResponse(_index_file())  # SPA fallback
+        detail = exc.detail if isinstance(exc.detail, str) else "Request failed"
+        return JSONResponse(status_code=exc.status_code, content={"detail": detail}, headers=dict(exc.headers or {}))
 
-    # Content Security Policy
-    # Note: Svelte apps require 'unsafe-inline' for styles due to scoped CSS
-    # 'unsafe-inline' for scripts removed for better security
-    if request.url.path in ["/api/docs", "/api/redoc"]:
-        # Relaxed CSP for API documentation
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-            "img-src 'self' data: https:; "
-            "connect-src 'self';"
-        )
+    @app.exception_handler(Exception)
+    async def unhandled_handler(request: Request, exc: Exception) -> JSONResponse:
+        logger.exception("Unhandled error: %s", type(exc).__name__)
+        detail = f"{type(exc).__name__}: {exc}" if settings.debug else "Internal server error"
+        response = JSONResponse(status_code=500, content={"detail": detail, "code": "internal_error"})
+        # ServerErrorMiddleware sits outside every other middleware, so add the headers here too.
+        apply_security_headers(response.headers, app_csp, request.url.path, request_is_https(request))
+        return response
+
+
+def _index_file() -> Path | None:
+    index = FRONTEND_BUILD / "index.html"
+    return index if index.is_file() else None
+
+
+def _mount_frontend(app: FastAPI) -> None:
+    if FRONTEND_BUILD.is_dir() and _index_file() is not None:
+        app.mount("/", StaticFiles(directory=str(FRONTEND_BUILD), html=True), name="frontend")
     else:
-        # Strict CSP for application
-        # Note: Svelte's production build includes inline scripts in index.html
-        # Using 'unsafe-inline' for scripts is necessary for the build to work
-        csp_policy = (
-            "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline'; "  # Required for Svelte build
-            "style-src 'self' 'unsafe-inline'; "  # Svelte requires this
-            "img-src 'self' data: blob:; "
-            "connect-src 'self'; "
-            "font-src 'self' data:; "
-            "object-src 'none'; "
-            "base-uri 'self'; "
-            "form-action 'self'; "
-            "frame-ancestors 'none';"
-        )
-        # Only add upgrade-insecure-requests if accessed via HTTPS
-        if request.url.scheme == "https":
-            csp_policy += " upgrade-insecure-requests;"
-
-        response.headers["Content-Security-Policy"] = csp_policy
-
-    return response
-
-# CSRF validation middleware (SEC-007)
-@app.middleware("http")
-async def csrf_protect(request: Request, call_next):
-    """Validate CSRF tokens on state-changing requests."""
-    # Skip CSRF protection entirely if disabled
-    if not settings.csrf_protection_enabled:
-        response = await call_next(request)
-        return response
-
-    # Skip CSRF check for safe methods
-    if request.method in ["GET", "HEAD", "OPTIONS"]:
-        response = await call_next(request)
-        return response
-
-    # Skip CSRF check for API docs and health check
-    if request.url.path in ["/api/health", "/api/docs", "/api/redoc", "/api/openapi.json"]:
-        response = await call_next(request)
-        return response
-
-    # Skip CSRF check for initial login and setup (no token available yet)
-    if request.url.path in ["/api/auth/login", "/api/auth/setup"]:
-        response = await call_next(request)
-        # Set CSRF token cookie on successful login/setup
-        if response.status_code == 200:
-            csrf_token = generate_csrf_token()
-            response.set_cookie(
-                key=CSRF_COOKIE_NAME,
-                value=csrf_token,
-                httponly=False,  # Must be readable by JavaScript
-                secure=not settings.debug,  # HTTPS only in production
-                samesite="strict",
-                max_age=86400  # 24 hours
-            )
-        return response
-
-    # Validate CSRF token for all other state-changing requests
-    cookie_token = request.cookies.get(CSRF_COOKIE_NAME)
-    header_token = request.headers.get(CSRF_HEADER_NAME)
-
-    if not verify_csrf_token(cookie_token or "", header_token or ""):
-        logger.warning(f"CSRF validation failed for {request.method} {request.url.path}")
-        return JSONResponse(
-            status_code=403,
-            content={"detail": "CSRF validation failed"}
-        )
-
-    response = await call_next(request)
-    return response
+        logger.info("Frontend build not found at %s; serving API only", FRONTEND_BUILD)
 
 
-# Request timing middleware
-@app.middleware("http")
-async def add_process_time_header(request: Request, call_next):
-    start_time = time.time()
-    response = await call_next(request)
-    process_time = time.time() - start_time
-    response.headers["X-Process-Time"] = str(process_time)
-    return response
-
-# CORS middleware (SEC-017)
-# Allow CORS_ORIGINS from environment variable (comma-separated)
-# Defaults defined in config.py
-cors_origins = settings.cors_origins
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=cors_origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept", "X-CSRF-Token"],
-)
-
-# Exception handler for better error messages
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    if settings.debug:
-        import traceback
-        traceback.print_exc()
-        raise exc
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "Internal server error"},
-    )
-
-# API routes
-app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
-app.include_router(interfaces.router, prefix="/api/interfaces", tags=["Interfaces"])
-app.include_router(peers.router, prefix="/api/interfaces", tags=["Peers"])
-app.include_router(settings_router.router)
-app.include_router(privacy.router, prefix="/api/privacy", tags=["Privacy"])
-app.include_router(system.router, tags=["System"])
-
-
-@app.get("/api/health")
-async def health_check():
-    return {"status": "healthy"}
-
-
-@app.get("/api/docs", include_in_schema=False)
-async def get_swagger_ui(request: Request):
-    """Public Swagger UI."""
-    from fastapi.openapi.docs import get_swagger_ui_html
-    
-    return get_swagger_ui_html(
-        openapi_url="/api/openapi.json",
-        title=f"{app.title} - API Documentation",
-        swagger_favicon_url="/favicon.ico",
-    )
-
-
-@app.get("/api/redoc", include_in_schema=False)
-async def get_redoc(request: Request):
-    """Public ReDoc."""
-    from fastapi.openapi.docs import get_redoc_html
-    
-    return get_redoc_html(
-        openapi_url="/api/openapi.json",
-        title=f"{app.title} - API Documentation",
-        redoc_favicon_url="/favicon.ico",
-    )
-
-
-@app.post("/api/qr-image")
-async def get_qr_image(request: Request):
-    """Get QR code image using a signed token in request body (not in URL)."""
-    from app.dependencies import validate_qr_token
-    from app.database import get_peer_metadata
-    from app.services.wireguard import get_wireguard_service
-    from app.services.qr_generator import QRGenerator
-    from fastapi.responses import Response
-
-    body = await request.json()
-    token = body.get("token")
-    if not token:
-        raise HTTPException(status_code=400, detail="Missing token")
-
-    # Validate token and extract payload
-    payload = validate_qr_token(token)
-    interface_name = payload["interface_name"]
-    public_key = payload["public_key"]
-
-    # Get metadata
-    metadata = await get_peer_metadata(interface_name, public_key)
-    if not metadata or not metadata.get("private_key"):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Peer configuration not available.",
-        )
-
-    # Generate config and QR code
-    wg_service = get_wireguard_service()
-    try:
-        config = await wg_service.generate_client_config(
-            interface_name,
-            public_key,
-            metadata["private_key"],
-        )
-
-        qr_image = QRGenerator.generate_qr_code(config)
-
-        return Response(
-            content=qr_image,
-            media_type="image/png",
-        )
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e),
-        )
-
-
-# Serve static files in production
-static_path = Path(__file__).parent.parent.parent / "frontend" / "build"
-if static_path.exists():
-    app.mount("/", StaticFiles(directory=str(static_path), html=True), name="static")
-
-    @app.exception_handler(404)
-    async def custom_404_handler(request: Request, exc):
-        if request.url.path.startswith("/api"):
-            return JSONResponse({"detail": "Not Found"}, status_code=404)
-        return FileResponse(static_path / "index.html")
-
+app = create_app()

@@ -1,109 +1,148 @@
 # Peer Management
 
-Peers are the clients (phones, laptops, servers) that connect to your WireGuard interfaces.
+Peers are the clients (phones, laptops, servers) that connect to a WireGuard interface. Peers
+belong to exactly one interface.
 
-## Adding a Peer
+## Creating a Peer
 
-1. Select an interface (e.g., `wg0`).
-2. Click **Add Peer**.
-3. Fill in the details:
-   - **Name**: A friendly label for the device (e.g., "John's iPhone"). Up to 64 characters.
-   - **Allowed IPs**: Set to `auto` to automatically assign the next available IP, or specify a CIDR manually (e.g., `10.0.0.5/32`).
-   - **Persistent Keepalive**: Seconds between keepalive packets (default: 25). Set to 0 to disable. Useful for peers behind NAT.
-4. Click **Save**.
+From an interface page, click **Add Peer** (`POST /api/interfaces/{name}/peers`):
 
-TunnBox automatically generates a keypair for the peer. The private key is encrypted and stored in the database.
+- **Name** — a friendly label.
+- **Allowed IPs** — leave as `"auto"` (or omit) to assign the next free address in the
+  interface's subnet(s); or provide a CIDR/list explicitly.
+- **Split tunnel** — see below.
+- **DNS override** — per-peer `client_dns`, otherwise falls back to the interface's DNS, then the
+  global default.
+- **Persistent keepalive** — seconds between keepalives (default from the `default_keepalive`
+  setting, normally 25). Useful when the peer is behind NAT.
+- **Expiry** — none, or a preset (1 day / 7 days / 30 days) / custom date-time.
+- **Notes** — free text.
+
+TunnBox generates the peer's keypair and a preshared key server-side; the private key is
+encrypted before being stored. You never need to provide a public key yourself.
 
 ### Auto IP Assignment
 
-When `allowed_ips` is set to `auto`, TunnBox calculates the next available IP in the interface's subnet. For example, if the interface address is `10.0.0.1/24`, the first peer gets `10.0.0.2/32`, the next gets `10.0.0.3/32`, and so on.
+With `allowed_ips: "auto"` (or omitted), TunnBox scans the interface's address CIDR(s) and picks
+the next unused host, for both IPv4 and IPv6 when the interface is dual-stack. Check the next
+free address ahead of time:
 
-You can check the next available IP via the API:
 ```bash
-curl http://localhost:8000/api/interfaces/wg0/next-ip \
+curl https://vpn.example.com/api/interfaces/wg0/next-ip \
+  -H "Authorization: Bearer <token>"
+# {"allowed_ips": "10.8.0.2/32"}
+```
+
+### Server-Side AllowedIPs Policy
+
+When you set `allowed_ips` explicitly (instead of `"auto"`), it's validated against the
+interface's own network:
+
+- Each address must be a **host route inside the interface's subnet(s)** (e.g. `10.8.0.5/32`
+  within a `10.8.0.0/24` interface) — this is what the server actually accepts as that peer's
+  source address, not the routes the client sends traffic to (that's `client_allowed_ips`, see
+  split tunnel below).
+- A **wider route** (anything less specific than a single host, e.g. `10.8.0.0/28`) is
+  **admin-only** — an operator's request with a non-host route is rejected.
+- **`0.0.0.0/0` and `::/0` are never allowed** here, regardless of role — a default route as a
+  peer's server-side `allowed_ips` would let that peer claim traffic for the whole interface.
+- An address that duplicates or overlaps another peer's already-assigned `allowed_ips` on the
+  same interface returns `409 Conflict`.
+
+## Split Tunnel Presets
+
+The peer's own `client_allowed_ips` field controls what the *client* routes through the tunnel
+(this is separate from `allowed_ips`, the server-side entry that restricts what source IPs the
+server accepts from that peer). The UI offers presets when creating or editing a peer:
+
+| Preset | `client_allowed_ips` |
+|--------|----------------------|
+| Full tunnel | `0.0.0.0/0, ::/0` — all client traffic goes through the VPN |
+| LAN only | `10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16` plus the interface's own subnet |
+| Interface subnet only | Just the interface's address CIDR(s) — only VPN-hosted resources are reachable |
+| Custom | Any CIDR list you enter |
+
+This is stored per peer and only affects the rendered *client* config — the backend does not
+interpret or restrict it further. Full tunnel requires NAT (PostUp/PostDown masquerade rules) on
+the interface for clients to actually reach the internet — see
+[Interface Management](./interface-management.md#postup-and-postdown-scripts).
+
+## Expiry & Auto-Disable
+
+Set `expires_at` when creating or editing a peer. A background job runs every 60 seconds and
+disables (does not delete) any enabled peer whose `expires_at` has passed — the interface config
+is re-rendered and, if active, synced live. This is logged as `peer.auto_disabled` with actor
+`system`. A disabled peer keeps its data and can be re-enabled and given a new expiry at any time.
+
+## Enable / Disable
+
+`POST /api/peers/{id}/enable` and `POST /api/peers/{id}/disable` toggle a peer without deleting
+it. A disabled peer is dropped from the rendered `.conf` (and from a live `wg syncconf`) but its
+row, keys, and history stay in the database.
+
+## Key Rotation
+
+`POST /api/peers/{id}/rotate-keys` generates a brand-new keypair and preshared key for the peer,
+replacing the old ones. **The peer's existing client config, QR code, and any outstanding share
+link immediately stop working** — the client must re-import the new config. Use this if a
+device's config was compromised or lost.
+
+## Onboarding: QR, Download, Share Link
+
+After creating a peer (or from its row menu), three equivalent ways to hand the config to the end
+user. All three require the **operator** role (or an API key with `peers:write`) — a viewer or a
+read-only API key gets `403`, because each one exposes the peer's private key and preshared key.
+
+- **QR code** — `GET /api/peers/{id}/qr` returns a PNG the client scans in the WireGuard app.
+- **Download** — `GET /api/peers/{id}/config` returns the `.conf` file as an attachment
+  (`<name>.conf`); returns `404` if the peer has no stored private key (e.g. after import from a
+  legacy config that didn't include one).
+- **Share link** — `POST /api/peers/{id}/share {expires_in_hours?: 24, max_uses?: 1}` creates a
+  one-time (by default) link at `/share/<token>`. Anyone with the link can view the peer's QR
+  code, download the config, and copy the config text — no TunnBox login required. The link
+  expires after `expires_in_hours` or after `max_uses` redemptions, whichever comes first
+  (`GET /api/share/{token}` returns `410` once exhausted or expired). Useful for handing a config
+  to someone without giving them TunnBox credentials.
+
+All three accept an `?allowed_ips=<override>` query parameter to preview the config under a
+different split-tunnel setting without changing the stored value.
+
+## Bulk Actions
+
+Select multiple peers in the table and use the bulk action bar, or call the API directly:
+
+```bash
+curl -X POST https://vpn.example.com/api/peers/bulk \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"ids": [12, 13, 14], "action": "enable"}'
+# {"affected": 3}
+```
+
+`action` is `enable`, `disable`, or `delete`.
+
+## Global Peer Search
+
+The **Peers** page searches across every interface at once:
+
+```bash
+curl "https://vpn.example.com/api/peers?q=laptop&status=online&page=1&page_size=25" \
   -H "Authorization: Bearer <token>"
 ```
 
-## Connection Methods
+Filter by `q` (name match), `interface`, and `status` (`online`, `offline`, `disabled`,
+`expired`); paginated. Use `GET /api/interfaces/{name}/peers` instead when you only need one
+interface's peers, with `sort`/`order` (`name`, `handshake`, `rx`, `tx`, `created`).
 
-### Mobile (QR Code)
+## Monitoring
 
-1. Click the **QR Code** icon next to a peer.
-2. Open the **WireGuard** app on your phone (available for iOS and Android).
-3. Tap **Add a tunnel** > **Scan from QR code**.
-4. Scan the QR code displayed in TunnBox.
-
-The QR code is generated securely — the private key is never exposed in the URL. A signed JWT token with a 5-minute expiry is used to authorize the QR image request.
-
-### Desktop (Config File)
-
-1. Click the **Download** icon next to a peer.
-2. Save the `.conf` file.
-3. Import it into the WireGuard client:
-   - **Windows/macOS**: Open WireGuard app > **Import tunnel(s) from file**
-   - **Linux**: Copy to `/etc/wireguard/` and run `wg-quick up <name>`
-
-### Manual Configuration
-
-If you need to configure a client manually, download the config file and note these fields:
-- `[Interface]` section: `PrivateKey`, `Address`, `DNS`
-- `[Peer]` section: `PublicKey` (server's), `AllowedIPs`, `Endpoint`, `PersistentKeepalive`
-
-## Full Tunnel vs Split Tunnel
-
-### Full tunnel (route all traffic through VPN)
-
-Set the client's `AllowedIPs` to `0.0.0.0/0, ::/0`. All traffic goes through the VPN. You must also configure NAT on the interface (see [Interface Management — PostUp/PostDown](./interface-management.md#postup-and-postdown-scripts)).
-
-### Split tunnel (only VPN subnet)
-
-Set `AllowedIPs` to just the VPN subnet (e.g., `10.0.0.0/24`). Only traffic destined for the VPN network goes through the tunnel. Internet traffic uses the client's normal connection.
-
-## Monitoring Peers
-
-The dashboard shows:
-- **Status**: Green indicator = handshake within the last 180 seconds (online).
-- **Transfer**: Total bytes uploaded and downloaded.
-- **Last Handshake**: Timestamp of the most recent successful handshake.
-- **Endpoint**: The peer's public IP and port (visible only when connected).
-
-## Updating a Peer
-
-You can change a peer's name, allowed IPs, or persistent keepalive. If the interface is active, changes are applied live using `wg syncconf`.
-
-```bash
-curl -X PUT http://localhost:8000/api/interfaces/wg0/peers/<public_key> \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Updated Name", "persistent_keepalive": 30}'
-```
+Each peer reports `status` (`online`, `offline`, `disabled`, `expired`), `endpoint`,
+`latest_handshake_at`, and cumulative `rx_total`/`tx_total` that survive interface restarts (the
+sampler tracks counter resets and only ever adds positive deltas). Per-peer history is available
+via `GET /api/peers/{id}/stats?range=1h|6h|24h|7d|30d`.
 
 ## Removing a Peer
 
-Removing a peer:
-- Deletes the peer from the WireGuard config
-- Removes peer metadata and encrypted private key from the database
-- If the interface is active, the change is applied immediately
-
-The client's config file will no longer work after removal.
-
-## Mobile Setup Walkthrough
-
-### iOS
-1. Install **WireGuard** from the App Store.
-2. In TunnBox, add a peer for the device.
-3. Click the QR code icon and scan it with the WireGuard app.
-4. Toggle the tunnel ON in the WireGuard app.
-5. Optionally enable "On-Demand" activation under tunnel settings.
-
-### Android
-1. Install **WireGuard** from Google Play or F-Droid.
-2. In TunnBox, add a peer for the device.
-3. Tap the **+** button in the WireGuard app > **Scan from QR code**.
-4. Scan the QR code from TunnBox.
-5. Toggle the tunnel ON.
-
-### Troubleshooting Mobile Connections
-- Ensure `WG_DEFAULT_ENDPOINT` is set to a publicly reachable IP or domain.
-- If on cellular, some carriers block UDP traffic on non-standard ports. Try using port `443` or `53` for WireGuard.
-- Set `PersistentKeepalive` to `25` to maintain the connection behind mobile NAT.
+`DELETE /api/peers/{id}` removes the peer, its stats history, and any share links permanently.
+The config already handed to the client stops working the next time the interface config is
+applied. This cannot be undone.

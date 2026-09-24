@@ -1,451 +1,497 @@
 <script lang="ts">
-	import { page } from "$app/stores";
-	import { goto } from "$app/navigation";
-	import { onMount } from "svelte";
-	import { api, type Interface, type Peer } from "$lib/api";
-	import { interfaces, peers } from "$lib/stores/interfaces";
-	import Button from "$lib/components/Button.svelte";
-	import Toggle from "$lib/components/Toggle.svelte";
-	import StatusBadge from "$lib/components/StatusBadge.svelte";
-	import PeerCard from "$lib/components/PeerCard.svelte";
-	import PeerModal from "$lib/components/PeerModal.svelte";
-	import QRCodeModal from "$lib/components/QRCodeModal.svelte";
-	import DeleteConfirmationModal from "$lib/components/DeleteConfirmationModal.svelte";
-	import { useAutoRefresh } from "$lib/utils/autoRefresh.svelte";
+	/**
+	 * Interface detail: header (status, toggle, actions), stat tiles, traffic chart,
+	 * tabs Peers / Settings / Activity.
+	 */
+	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import {
-		ArrowLeft,
-		RefreshCw,
+		Activity,
+		ArrowDown,
+		ArrowUp,
+		Download,
+		MoreHorizontal,
 		Plus,
+		Search,
+		Settings2,
 		Trash2,
-		Copy,
-		Check,
-		ArrowDownToLine,
-		ArrowUpFromLine,
-		Network,
-		Key,
-		Edit,
-		Save,
-		X,
-		HelpCircle,
-		Server,
-	} from "lucide-svelte";
+		Users,
+		Wifi
+	} from 'lucide-svelte';
+	import { api, isAbortError, toApiError } from '$lib/api';
+	import type {
+		AuditEntry,
+		Interface,
+		Peer,
+		PeerSort,
+		PeerStatus,
+		SortOrder,
+		StatsRange,
+		StatsResponse
+	} from '$lib/api/types';
+	import { auth } from '$lib/stores/auth.svelte';
+	import { liveStatus } from '$lib/stores/live.svelte';
+	import { settingsStore } from '$lib/stores/settings.svelte';
+	import { toast } from '$lib/stores/toast.svelte';
+	import { formatBytes, formatDateTime, formatRelative } from '$lib/utils/format';
+	import { createPoller } from '$lib/utils/poll.svelte';
+	import InterfaceStatusBadge from '$lib/components/app/InterfaceStatusBadge.svelte';
+	import PageHeader from '$lib/components/app/PageHeader.svelte';
+	import AreaChart from '$lib/components/charts/AreaChart.svelte';
+	import InterfaceSettingsPanel from '$lib/components/interfaces/InterfaceSettingsPanel.svelte';
+	import PeerManager from '$lib/components/peers/PeerManager.svelte';
+	import Button from '$lib/components/ui/Button.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
+	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
+	import DropdownMenu, { type MenuItem } from '$lib/components/ui/DropdownMenu.svelte';
+	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import ErrorState from '$lib/components/ui/ErrorState.svelte';
+	import IconButton from '$lib/components/ui/IconButton.svelte';
+	import Input from '$lib/components/ui/Input.svelte';
+	import SegmentedControl from '$lib/components/ui/SegmentedControl.svelte';
+	import Select from '$lib/components/ui/Select.svelte';
+	import Skeleton from '$lib/components/ui/Skeleton.svelte';
+	import Stat from '$lib/components/ui/Stat.svelte';
+	import Switch from '$lib/components/ui/Switch.svelte';
+	import Tabs from '$lib/components/ui/Tabs.svelte';
 
-	const interfaceName = $derived($page.params.name);
+	type Tab = 'peers' | 'settings' | 'activity';
+
+	const name = $derived(decodeURIComponent(page.params.name ?? ''));
+	const canWrite = $derived(auth.can('operator'));
+	const isAdmin = $derived(auth.can('admin'));
 
 	let iface = $state<Interface | null>(null);
-	let loading = $state(true);
-	let manualRefreshing = $state(false);
+	let peers = $state<Peer[]>([]);
+	let stats = $state<StatsResponse | null>(null);
+	let range = $state<StatsRange>('24h');
+	let tab = $state<Tab>('peers');
+	let notFound = $state(false);
+
+	let query = $state('');
+	let statusFilter = $state<PeerStatus | ''>('');
+	let sortKey = $state<PeerSort>('name');
+	let sortOrder = $state<SortOrder>('asc');
+
 	let toggling = $state(false);
+	let createOpen = $state(false);
+	let focusPeerId = $state<number | null>(null);
+	let deleteOpen = $state(false);
 	let deleting = $state(false);
-	let copied = $state(false);
-	let error = $state("");
+	let downloading = $state(false);
 
-	let showPeerModal = $state(false);
-	let showQRModal = $state(false);
-	let showDeleteModal = $state(false);
-	let editingPeer = $state<Peer | null>(null);
-	let qrPeer = $state<Peer | null>(null);
+	let activity = $state<AuditEntry[]>([]);
+	let activityLoading = $state(false);
+	let activityError = $state<string | null>(null);
 
-	// DNS editing state
-	let editingDns = $state(false);
-	let dnsValue = $state("");
-	let dnsError = $state("");
-	let savingSettings = $state(false);
+	const poller = createPoller(
+		async (signal) => {
+			const n = name;
+			try {
+				const [i, p, s] = await Promise.all([
+					api.interfaces.get(n, signal),
+					api.interfaces.peers(
+						n,
+						{
+							q: debouncedQuery || undefined,
+							status: statusFilter || undefined,
+							sort: sortKey,
+							order: sortOrder
+						},
+						signal
+					),
+					api.interfaces.stats(n, range, signal)
+				]);
+				iface = i;
+				peers = p;
+				stats = s;
+				notFound = false;
+			} catch (err) {
+				if (toApiError(err).status === 404) notFound = true;
+				throw err;
+			}
+		},
+		{ intervalMs: () => settingsStore.refreshMs, immediate: false }
+	);
+	$effect(() => poller.start());
+	$effect(() => liveStatus.bind(poller));
+	$effect(() => {
+		// Re-fetch when any query input changes.
+		void name;
+		void range;
+		void debouncedQuery;
+		void statusFilter;
+		void sortKey;
+		void sortOrder;
+		void poller.refresh();
+	});
 
-	async function loadData(silent: boolean = false) {
-		if (!loading && !silent) {
-			// Only show loading spinner on initial load and manual refresh
-			error = "";
-		}
+	// URL hooks: ?new=peer opens the create form, ?peer=<id> opens the drawer, ?tab= selects a tab.
+	$effect(() => {
+		const sp = page.url.searchParams;
+		const t = sp.get('tab');
+		if (t === 'peers' || t === 'settings' || t === 'activity') tab = t;
+		const wantsNew = sp.get('new') === 'peer';
+		const peerId = Number(sp.get('peer'));
+		if (wantsNew && canWrite) createOpen = true;
+		if (peerId) focusPeerId = peerId;
+		if (wantsNew || peerId)
+			void goto(`/interfaces/${encodeURIComponent(name)}`, { replaceState: true, noScroll: true });
+	});
+
+	let activityAbort: AbortController | null = null;
+	async function loadActivity() {
+		activityAbort?.abort();
+		const ctl = new AbortController();
+		activityAbort = ctl;
+		activityLoading = true;
+		activityError = null;
 		try {
-			iface = await api.getInterface(interfaceName);
-			await peers.load(interfaceName, silent);
-			error = "";
-		} catch (e) {
-			error = e instanceof Error ? e.message : "Failed to load interface";
+			const res = await api.audit.list({ q: name, page_size: 50 }, ctl.signal);
+			if (ctl.signal.aborted) return;
+			activity = res.items.filter(
+				(a) => a.target === name || a.target?.startsWith(`${name}/`) || a.action.startsWith('interface.')
+			);
+		} catch (err) {
+			if (isAbortError(err)) return;
+			activityError = toApiError(err).detail;
 		} finally {
-			loading = false;
+			if (!ctl.signal.aborted) activityLoading = false;
 		}
 	}
-
-	const autoRefresh = useAutoRefresh(async () => {
-		await loadData(true); // true = silent mode
+	$effect(() => {
+		if (tab === 'activity' && auth.can('operator')) void loadActivity();
+		return () => activityAbort?.abort();
 	});
 
-	onMount(() => {
-		loadData();
+	// Debounce the search box so each keystroke doesn't restart the poller.
+	let debouncedQuery = $state('');
+	$effect(() => {
+		const q = query.trim();
+		const t = setTimeout(() => (debouncedQuery = q), 200);
+		return () => clearTimeout(t);
 	});
 
-	async function handleRefresh() {
-		manualRefreshing = true;
-		await autoRefresh.manualRefresh();
-		manualRefreshing = false;
-	}
-
-	async function handleToggle(checked: boolean) {
+	async function toggle(up: boolean) {
 		if (!iface) return;
+		const prev = iface;
+		iface = { ...iface, enabled: up, is_active: up };
 		toggling = true;
 		try {
-			await interfaces.toggle(interfaceName, checked);
-			iface = await api.getInterface(interfaceName);
-		} catch (e) {
-			console.error("Failed to toggle:", e);
+			iface = up ? await api.interfaces.up(prev.name) : await api.interfaces.down(prev.name);
+			toast.success(`${iface.name} is ${iface.is_active ? 'up' : 'down'}`);
+		} catch (err) {
+			iface = prev;
+			toast.error(`Could not bring ${prev.name} ${up ? 'up' : 'down'}`, {
+				description: toApiError(err).detail
+			});
 		} finally {
 			toggling = false;
 		}
 	}
 
-	function openDeleteModal() {
-		showDeleteModal = true;
+	async function downloadServerConfig() {
+		if (!iface) return;
+		downloading = true;
+		try {
+			await api.interfaces.downloadConfig(iface.name);
+		} catch (err) {
+			toast.error('Download failed', { description: toApiError(err).detail });
+		} finally {
+			downloading = false;
+		}
 	}
 
 	async function confirmDelete() {
+		if (!iface) return;
 		deleting = true;
 		try {
-			await api.deleteInterface(interfaceName);
-			interfaces.removeInterface(interfaceName);
-			showDeleteModal = false;
-			goto("/interfaces");
-		} catch (e) {
-			console.error("Failed to delete:", e);
-			alert("Failed to delete interface");
+			await api.interfaces.remove(iface.name);
+			toast.success(`Interface ${iface.name} deleted`);
+			deleteOpen = false;
+			void goto('/interfaces');
+		} catch (err) {
+			toast.error('Could not delete interface', { description: toApiError(err).detail });
 		} finally {
 			deleting = false;
 		}
 	}
 
-	async function handleCopyPublicKey() {
-		if (!iface) return;
-		try {
-			await navigator.clipboard.writeText(iface.public_key);
-			copied = true;
-			setTimeout(() => (copied = false), 2000);
-		} catch (e) {
-			console.error("Failed to copy:", e);
+	const menuItems = $derived<MenuItem[]>([
+		{ label: 'Edit settings', icon: Settings2, onselect: () => (tab = 'settings'), hidden: !canWrite },
+		{
+			label: 'Download server config',
+			icon: Download,
+			onselect: () => void downloadServerConfig(),
+			hidden: !isAdmin
+		},
+		{
+			label: 'Delete interface',
+			icon: Trash2,
+			danger: true,
+			separator: true,
+			onselect: () => (deleteOpen = true),
+			hidden: !canWrite
 		}
-	}
+	]);
 
-	function formatBytes(bytes: number): string {
-		if (bytes === 0) return "0 B";
-		const k = 1024;
-		const sizes = ["B", "KB", "MB", "GB", "TB"];
-		const i = Math.floor(Math.log(bytes) / Math.log(k));
-		return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-	}
+	const tabs = $derived([
+		{ id: 'peers' as const, label: 'Peers', icon: Users, count: iface?.peer_count ?? null },
+		{ id: 'settings' as const, label: 'Settings', icon: Settings2 },
+		{ id: 'activity' as const, label: 'Activity', icon: Activity, hidden: !auth.can('operator') }
+	]);
 
-	function openAddPeer() {
-		editingPeer = null;
-		showPeerModal = true;
-	}
+	const RANGES = [
+		{ value: '1h' as const, label: '1h' },
+		{ value: '6h' as const, label: '6h' },
+		{ value: '24h' as const, label: '24h' },
+		{ value: '7d' as const, label: '7d' },
+		{ value: '30d' as const, label: '30d' }
+	];
+	const STATUS_OPTIONS = [
+		{ value: '', label: 'All statuses' },
+		{ value: 'online', label: 'Online' },
+		{ value: 'offline', label: 'Offline' },
+		{ value: 'disabled', label: 'Disabled' },
+		{ value: 'expired', label: 'Expired' }
+	];
 
-	function openEditPeer(peer: Peer) {
-		editingPeer = peer;
-		showPeerModal = true;
-	}
-
-	function openQRModal(peer: Peer) {
-		qrPeer = peer;
-		showQRModal = true;
-	}
-
-	async function handlePeerSaved(peer: Peer) {
-		// Refresh interface data to update peer count and stats
-		await loadData();
-
-		// Show QR code for newly created peer
-		if (!editingPeer) {
-			qrPeer = peer;
-			showQRModal = true;
-		}
-	}
-
-	async function handlePeerDeleted() {
-		// Refresh interface data to update peer count and stats
-		await loadData();
-	}
-
-	// DNS editing functions
-	function startEditDns() {
-		dnsValue = iface?.dns || "";
-		dnsError = "";
-		editingDns = true;
-	}
-
-	function cancelEditDns() {
-		editingDns = false;
-		dnsError = "";
-	}
-
-	async function saveDns() {
-		dnsError = "";
-
-		// Validate DNS format (basic IP validation)
-		if (dnsValue) {
-			const servers = dnsValue.split(",").map((s) => s.trim());
-			for (const server of servers) {
-				const parts = server.split(".");
-				if (parts.length !== 4) {
-					dnsError = "Invalid DNS format. Expected IPv4 address(es)";
-					return;
-				}
-				for (const part of parts) {
-					const num = parseInt(part);
-					if (isNaN(num) || num < 0 || num > 255) {
-						dnsError = "Invalid DNS format. Octets must be  0-255";
-						return;
-					}
-				}
-			}
-		}
-
-		try {
-			savingSettings = true;
-			const updated = await api.updateInterface(interfaceName, {
-				dns: dnsValue,
-			});
-			iface = updated;
-			editingDns = false;
-		} catch (e) {
-			dnsError = e instanceof Error ? e.message : "Failed to update DNS";
-		} finally {
-			savingSettings = false;
-		}
-	}
+	const loading = $derived(poller.loading && !iface);
+	const filtered = $derived(!!query.trim() || !!statusFilter);
 </script>
 
 <svelte:head>
-	<title>{interfaceName} - Tunnbox</title>
+	<title>{name} · TunnBox</title>
 </svelte:head>
 
-<div class="max-w-5xl mx-auto">
-	{#if loading}
-		<div class="flex items-center justify-center py-12">
-			<div
-				class="h-8 w-8 border-4 border-slate-700 border-t-emerald-500 rounded-full animate-spin"
-			></div>
-		</div>
-	{:else if error}
-		<div class="text-center py-12">
-			<p class="text-rose-400 mb-4">{error}</p>
-			<Button variant="secondary" onclick={() => goto("/interfaces")}>
-				<ArrowLeft class="h-4 w-4 mr-2" />
-				Back to Interfaces
-			</Button>
-		</div>
-	{:else if iface}
-		<!-- Header -->
-		<div class="mb-8">
-			<a
-				href="/interfaces"
-				class="inline-flex items-center text-slate-400 hover:text-slate-200 transition-colors mb-4"
-			>
-				<ArrowLeft class="h-4 w-4 mr-2" />
-				Back to Interfaces
-			</a>
-
-			<div
-				class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
-			>
-				<div class="flex items-center gap-4">
-					<div
-						class="p-3 rounded-xl {iface.is_active
-							? 'bg-emerald-600/10 text-emerald-500'
-							: 'bg-slate-700 text-slate-400'}"
-					>
-						<Network class="h-8 w-8" />
-					</div>
-					<div>
-						<div class="flex items-center gap-3">
-							<h1 class="text-2xl font-bold text-white">
-								{iface.name}
-							</h1>
-							<StatusBadge
-								status={iface.is_active ? "active" : "inactive"}
-							/>
-						</div>
-						<p class="text-slate-400 mt-0.5">
-							Port {iface.listen_port} &bull; {iface.address} &bull;
-							Live updates
-						</p>
-					</div>
-				</div>
-
-				<div class="flex items-center gap-3">
-					<Toggle
-						checked={iface.is_active}
-						loading={toggling}
-						onchange={handleToggle}
-					/>
-					<Button
-						variant="secondary"
-						onclick={handleRefresh}
-						loading={manualRefreshing}
-					>
-						<RefreshCw class="h-4 w-4" />
-					</Button>
-					<Button variant="danger" onclick={openDeleteModal}>
-						<Trash2 class="h-4 w-4" />
-					</Button>
-				</div>
-			</div>
-		</div>
-
-		<!-- Stats -->
-		<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-			<div
-				class="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4 transition-all duration-300"
-			>
-				<p class="text-xs text-slate-500 uppercase tracking-wider mb-1">
-					Peers
-				</p>
-				<p
-					class="text-2xl font-bold text-white transition-all duration-300"
-				>
-					{iface.peer_count}
-				</p>
-			</div>
-
-			<div
-				class="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4 transition-all duration-300"
-			>
-				<p class="text-xs text-slate-500 uppercase tracking-wider mb-1">
-					Status
-				</p>
-				<p
-					class="text-lg font-semibold {iface.is_active
-						? 'text-emerald-500'
-						: 'text-slate-400'} transition-all duration-300"
-				>
-					{iface.is_active ? "Active" : "Inactive"}
-				</p>
-			</div>
-
-			<div
-				class="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4 transition-all duration-300"
-			>
-				<div class="flex items-center gap-2 mb-1">
-					<ArrowDownToLine class="h-4 w-4 text-emerald-500" />
-					<p class="text-xs text-slate-500 uppercase tracking-wider">
-						Download
-					</p>
-				</div>
-				<p
-					class="text-2xl font-bold text-white transition-all duration-300"
-				>
-					{formatBytes(iface.total_transfer_rx)}
-				</p>
-			</div>
-
-			<div
-				class="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4 transition-all duration-300"
-			>
-				<div class="flex items-center gap-2 mb-1">
-					<ArrowUpFromLine class="h-4 w-4 text-blue-500" />
-					<p class="text-xs text-slate-500 uppercase tracking-wider">
-						Upload
-					</p>
-				</div>
-				<p
-					class="text-2xl font-bold text-white transition-all duration-300"
-				>
-					{formatBytes(iface.total_transfer_tx)}
-				</p>
-			</div>
-		</div>
-
-		<!-- Public Key -->
-		<div
-			class="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4 mb-8"
-		>
-			<div class="flex items-center justify-between">
-				<div class="flex items-center gap-3">
-					<Key class="h-5 w-5 text-slate-400" />
-					<div>
-						<p
-							class="text-xs text-slate-500 uppercase tracking-wider"
+{#if notFound}
+	<ErrorState
+		title="Interface not found"
+		message={`There is no interface named "${name}".`}
+		onretry={() => goto('/interfaces')}
+	/>
+{:else if poller.error && !iface}
+	<ErrorState message={poller.error.detail} onretry={() => poller.refresh()} retrying={poller.refreshing} />
+{:else}
+	<PageHeader
+		title={name}
+		mono
+		description={iface
+			? `${iface.address} · UDP ${iface.listen_port}${iface.public_endpoint ? ` · ${iface.public_endpoint}` : ''}`
+			: undefined}
+	>
+		{#snippet badge()}
+			{#if iface}<InterfaceStatusBadge {iface} />{/if}
+		{/snippet}
+		{#snippet actions()}
+			{#if iface && canWrite}
+				<Switch
+					checked={iface.enabled}
+					label={iface.enabled ? 'Interface up' : 'Interface down'}
+					size="sm"
+					loading={toggling}
+					onchange={(v) => toggle(v)}
+				/>
+				<Button variant="primary" onclick={() => (createOpen = true)}>
+					<Plus class="h-4 w-4" aria-hidden="true" />
+					New peer
+				</Button>
+			{/if}
+			{#if iface && (canWrite || isAdmin)}
+				<DropdownMenu items={menuItems} label="Interface actions">
+					{#snippet trigger({ toggle: open, props })}
+						<IconButton
+							label="More actions"
+							variant="outline"
+							onclick={open}
+							loading={downloading}
+							{...props}
 						>
-							Public Key
-						</p>
-						<p class="text-sm font-mono text-slate-200 mt-0.5">
-							{iface.public_key}
-						</p>
-					</div>
-				</div>
-				<Button variant="ghost" size="sm" onclick={handleCopyPublicKey}>
-					{#if copied}
-						<Check class="h-4 w-4 text-emerald-500" />
-					{:else}
-						<Copy class="h-4 w-4" />
-					{/if}
-				</Button>
-			</div>
-		</div>
+							<MoreHorizontal class="h-4 w-4" />
+						</IconButton>
+					{/snippet}
+				</DropdownMenu>
+			{/if}
+		{/snippet}
+	</PageHeader>
 
-		<!-- Peers Section -->
-		<div class="flex items-center justify-between mb-4">
-			<h2 class="text-lg font-semibold text-white">Peers</h2>
-			<Button onclick={openAddPeer}>
-				<Plus class="h-4 w-4 mr-2" />
-				Add Peer
-			</Button>
-		</div>
+	<div class="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+		<Stat label="Peers" value={iface?.peer_count} {loading}>
+			{#snippet icon()}<Users class="h-4 w-4" />{/snippet}
+		</Stat>
+		<Stat label="Online" value={iface?.online_peer_count} tone="success" {loading}>
+			{#snippet icon()}<Wifi class="h-4 w-4" />{/snippet}
+		</Stat>
+		<Stat label="Download" value={iface ? formatBytes(iface.rx_total) : null} tone="download" {loading}>
+			{#snippet icon()}<ArrowDown class="h-4 w-4" />{/snippet}
+		</Stat>
+		<Stat label="Upload" value={iface ? formatBytes(iface.tx_total) : null} tone="upload" {loading}>
+			{#snippet icon()}<ArrowUp class="h-4 w-4" />{/snippet}
+		</Stat>
+	</div>
 
-		{#if $peers.loading}
-			<div class="flex items-center justify-center py-8">
-				<div
-					class="h-6 w-6 border-4 border-slate-700 border-t-emerald-500 rounded-full animate-spin"
-				></div>
-			</div>
-		{:else if $peers.peers.length === 0}
-			<div
-				class="text-center py-12 bg-slate-800/30 rounded-xl border border-slate-700/50"
-			>
-				<p class="text-slate-400 mb-4">No peers configured yet</p>
-				<Button onclick={openAddPeer}>
-					<Plus class="h-4 w-4 mr-2" />
-					Add Your First Peer
-				</Button>
-			</div>
-		{:else}
-			<div class="grid gap-4 sm:grid-cols-2">
-				{#each $peers.peers as peer (peer.public_key)}
-					<PeerCard
-						{peer}
-						{interfaceName}
-						onShowQR={openQRModal}
-						onEdit={openEditPeer}
-						onDelete={handlePeerDeleted}
+	<Card title="Traffic" class="mt-6">
+		{#snippet actions()}
+			<SegmentedControl bind:value={range} label="Time range" options={RANGES} />
+		{/snippet}
+		<AreaChart
+			points={stats?.points ?? []}
+			bucketSeconds={stats?.bucket_seconds}
+			title={`Traffic on ${name}`}
+			{loading}
+			refreshing={poller.refreshing && !!stats}
+		/>
+	</Card>
+
+	<div class="mt-6">
+		<Tabs {tabs} bind:value={tab} label="Interface sections" idPrefix="iface" />
+	</div>
+
+	{#if tab === 'peers'}
+		<div id="iface-panel-peers" role="tabpanel" aria-labelledby="iface-peers" class="mt-4">
+			<Card flush>
+				<div class="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
+					<Input
+						label="Search peers"
+						hideLabel
+						bind:value={query}
+						placeholder="Search peers…"
+						size="sm"
+						class="w-full sm:w-64"
+						data-hotkey-search
+						type="search"
+					>
+						{#snippet leading()}<Search class="h-4 w-4" />{/snippet}
+					</Input>
+					<Select
+						label="Status"
+						hideLabel
+						size="sm"
+						bind:value={statusFilter}
+						options={STATUS_OPTIONS}
+						class="w-40"
 					/>
-				{/each}
-			</div>
-		{/if}
+				</div>
+				{#if iface}
+					<PeerManager
+						{peers}
+						interfaces={[iface]}
+						{iface}
+						loading={poller.loading && peers.length === 0}
+						refreshing={poller.refreshing}
+						bind:createOpen
+						bind:focusPeerId
+						{sortKey}
+						{sortOrder}
+						onsort={(k, o) => {
+							sortKey = k as PeerSort;
+							sortOrder = o;
+						}}
+						onupdated={(p) => (peers = peers.map((x) => (x.id === p.id ? p : x)))}
+						oncreated={(p) => {
+							peers = [p, ...peers];
+							void poller.refresh();
+						}}
+						ondeleted={(ids) => {
+							peers = peers.filter((x) => !ids.includes(x.id));
+							void poller.refresh();
+						}}
+						onrefresh={() => void poller.refresh()}
+					>
+						{#snippet empty()}
+							{#if filtered}
+								<EmptyState compact title="No peers match" description="Try another search term or status.">
+									{#snippet actions()}
+										<Button
+											size="sm"
+											onclick={() => {
+												query = '';
+												statusFilter = '';
+											}}
+										>
+											Clear filters
+										</Button>
+									{/snippet}
+								</EmptyState>
+							{:else}
+								<EmptyState
+									title="No peers yet"
+									description="Add a device: TunnBox generates its keys and shows a QR code you can scan right away."
+								>
+									{#snippet icon()}<Users class="h-6 w-6" />{/snippet}
+									{#snippet actions()}
+										{#if canWrite}
+											<Button variant="primary" onclick={() => (createOpen = true)}>
+												<Plus class="h-4 w-4" aria-hidden="true" />
+												Add first peer
+											</Button>
+										{/if}
+									{/snippet}
+								</EmptyState>
+							{/if}
+						{/snippet}
+					</PeerManager>
+				{:else}
+					<div class="p-4"><Skeleton class="h-40 w-full" rounded="md" /></div>
+				{/if}
+			</Card>
+		</div>
+	{:else if tab === 'settings'}
+		<div id="iface-panel-settings" role="tabpanel" aria-labelledby="iface-settings" class="mt-4">
+			{#if iface}
+				<InterfaceSettingsPanel {iface} {canWrite} onsaved={(i) => (iface = i)} />
+			{/if}
+		</div>
+	{:else if tab === 'activity'}
+		<div id="iface-panel-activity" role="tabpanel" aria-labelledby="iface-activity" class="mt-4">
+			<Card title="Activity" description={`Audit entries mentioning ${name}`} flush>
+				{#snippet actions()}
+					<Button size="sm" variant="ghost" href={`/audit?q=${encodeURIComponent(name)}`}
+						>Open in audit log</Button
+					>
+				{/snippet}
+				{#if activityLoading}
+					<div class="divide-y divide-border">
+						{#each [1, 2, 3] as i (i)}<div class="px-5 py-3"><Skeleton class="h-3.5 w-64" /></div>{/each}
+					</div>
+				{:else if activityError}
+					<ErrorState compact message={activityError} onretry={loadActivity} />
+				{:else if activity.length === 0}
+					<EmptyState compact title="No activity yet" />
+				{:else}
+					<ol class="divide-y divide-border">
+						{#each activity as a (a.id)}
+							<li class="flex items-start gap-3 px-5 py-2.5 text-[13px]">
+								<span class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-fg-subtle/60" aria-hidden="true"
+								></span>
+								<div class="min-w-0 flex-1">
+									<p class="text-fg">
+										<span class="font-medium">{a.username ?? 'system'}</span>
+										<span class="text-fg-muted"> · </span>
+										<code class="font-mono text-[12px] text-fg-muted">{a.action}</code>
+										{#if a.target}<span class="text-fg-muted"> → </span><span class="font-mono text-[12px]"
+												>{a.target}</span
+											>{/if}
+									</p>
+									<p class="text-[12px] text-fg-subtle" title={formatDateTime(a.created_at)}>
+										{formatRelative(a.created_at)}
+									</p>
+								</div>
+							</li>
+						{/each}
+					</ol>
+				{/if}
+			</Card>
+		</div>
 	{/if}
-</div>
 
-{#if showPeerModal}
-	<PeerModal
-		{interfaceName}
-		peer={editingPeer}
-		onClose={() => (showPeerModal = false)}
-		onSaved={handlePeerSaved}
-	/>
-{/if}
-
-{#if showQRModal && qrPeer}
-	<QRCodeModal
-		peer={qrPeer}
-		{interfaceName}
-		onClose={() => (showQRModal = false)}
-	/>
-{/if}
-
-{#if showDeleteModal}
-	<DeleteConfirmationModal
-		title="Delete Interface"
-		message="Are you sure you want to delete this interface? This will remove all peers and cannot be undone."
-		itemName={interfaceName}
+	<ConfirmDialog
+		bind:open={deleteOpen}
+		title={`Delete ${name}?`}
+		message={`This brings the interface down and permanently deletes it together with all ${iface?.peer_count ?? 0} of its peers.`}
+		confirmLabel="Delete interface"
+		confirmText={name}
 		loading={deleting}
-		onConfirm={confirmDelete}
-		onCancel={() => (showDeleteModal = false)}
+		onconfirm={confirmDelete}
 	/>
 {/if}

@@ -3,134 +3,150 @@
 ## Container Won't Start
 
 ### "Permission denied" or capability errors
-The container requires specific Linux capabilities. Ensure your `docker-compose.yml` includes:
+Ensure `docker-compose.yml` includes:
 ```yaml
 cap_drop: [ALL]
 cap_add: [NET_ADMIN, SYS_MODULE, MKNOD]
 ```
-
-If running on a VPS with restricted Docker (e.g., some OpenVZ hosts), these capabilities may not be available. TunnBox requires a KVM or bare-metal host.
+Some restricted hosts (certain OpenVZ VPS providers) don't permit these. TunnBox needs a KVM or
+bare-metal host, or a provider that allows them.
 
 ### "sysctl not allowed"
-The container sets kernel parameters for IP forwarding. Some environments block this. Ensure the host allows:
 ```yaml
 sysctls:
   - net.ipv4.ip_forward=1
   - net.ipv4.conf.all.src_valid_mark=1
   - net.ipv6.conf.all.forwarding=1
 ```
-
-Alternatively, set these on the host directly:
+If the host blocks this, set the sysctls on the host directly instead:
 ```bash
 sysctl -w net.ipv4.ip_forward=1
 sysctl -w net.ipv6.conf.all.forwarding=1
 ```
 
-### Container starts but web UI is not accessible
-1. Check the container is running: `docker compose ps`
-2. Check logs for errors: `docker compose logs tunnbox`
-3. Verify the port mapping: `docker compose port tunnbox 8000`
-4. Ensure no firewall is blocking port 8000.
+### Web UI not reachable
+1. `docker compose ps` — confirm the container is running.
+2. `docker compose logs tunnbox` — check for startup errors.
+3. `docker compose port tunnbox 8000` — confirm the port mapping.
+4. Confirm no host firewall is blocking the port.
 
 ### Health check failing
-The built-in health check calls `curl -f http://localhost:8000/api/health`. If it fails:
 ```bash
-# Check from inside the container
 docker exec tunnbox curl -f http://localhost:8000/api/health
+# {"status": "ok"}
 ```
-
-If this returns `{"status":"healthy"}`, the issue is with external access (firewall, port mapping).
+If this succeeds but external access doesn't, the problem is firewall/port-mapping, not the app.
 
 ## Peers Can't Connect
 
 ### No handshake at all
-1. **Check the endpoint**: Ensure `WG_DEFAULT_ENDPOINT` is set to your server's public IP or domain, not `127.0.0.1` or a private IP.
-2. **Check the UDP port**: The WireGuard port (default `51820/udp`) must be open in your firewall and mapped in `docker-compose.yml`.
-   ```bash
-   # Test from outside the server
-   nc -zvu your-server-ip 51820
-   ```
-3. **Check the interface is UP**: In the TunnBox UI, verify the interface toggle is enabled.
-4. **Check the client config**: Download the config again and verify the `Endpoint` line has the correct IP and port.
+1. **Endpoint** — the `public_endpoint` setting (or `WG_DEFAULT_ENDPOINT`) must be a publicly
+   reachable IP or hostname, not `127.0.0.1` or a private address (unless the client is on the
+   same LAN).
+2. **UDP port** — the interface's listen port must be open in your firewall and mapped in
+   `docker-compose.yml`. Test from outside: `nc -zvu your-server-ip 51820`.
+3. **Interface state** — confirm it shows active in the UI or `is_active: true` from
+   `GET /api/interfaces/{name}`.
+4. **Client config** — re-download it; if it was generated before an endpoint change, the old
+   `Endpoint` line is stale.
 
 ### Handshake succeeds but no traffic flows
-1. **Check AllowedIPs on the client**: For full tunnel, use `0.0.0.0/0, ::/0`. For split tunnel, specify only the VPN subnet (e.g., `10.0.0.0/24`).
-2. **Check IP forwarding**: Ensure the container has `net.ipv4.ip_forward=1` set (see docker-compose sysctls).
-3. **Check PostUp/PostDown rules**: If you're using NAT (masquerading), verify PostUp iptables rules are correct:
-   ```
-   PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
-   PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
-   ```
-4. **Check the network interface name inside the container**: The outbound interface might not be `eth0`. Run:
+1. **Client `AllowedIPs`** — full tunnel needs `0.0.0.0/0, ::/0`; split tunnel needs the actual
+   routes you want (see [Peer Management — split tunnel](./peer-management.md#split-tunnel-presets)).
+2. **IP forwarding** — confirm the container has `net.ipv4.ip_forward=1` (see sysctls above).
+3. **NAT rules** — for full tunnel, the interface needs PostUp/PostDown masquerade rules, which
+   require `WG_ALLOW_CUSTOM_SCRIPTS=true`. See
+   [Interface Management](./interface-management.md#postup-and-postdown-scripts).
+4. **Outbound interface name** — the container's default route interface might not be `eth0`:
    ```bash
    docker exec tunnbox ip route | grep default
    ```
 
 ### Intermittent disconnections
-- Set **Persistent Keepalive** to `25` (seconds) on the peer. This is especially important when the client is behind NAT.
-- Check if the server has resource limits that are too restrictive.
+Set `PersistentKeepalive` to `25` on the peer — important when the client is behind NAT.
 
 ## DNS Problems
 
-### Clients can connect but can't resolve domains
-1. Verify the **DNS** setting on the interface or in server settings. Default is `1.1.1.1`.
-2. If using a split tunnel, DNS queries may still go to the client's default resolver. Set the client's `DNS` explicitly in the config.
-3. Check that the DNS server is reachable from the VPN subnet.
-
-### DNS leaks
-For full-tunnel configurations, ensure the client config has `DNS = 1.1.1.1` (or your preferred resolver) and `AllowedIPs = 0.0.0.0/0, ::/0`.
+- Confirm the interface or peer DNS setting (falls back to the global `default_dns` setting).
+- On split tunnel, DNS queries may still go to the client's normal resolver unless `DNS` is set
+  explicitly in the client config.
+- For full tunnel, verify the client config has both `DNS = ...` and
+  `AllowedIPs = 0.0.0.0/0, ::/0` to avoid leaks.
 
 ## Authentication Issues
 
 ### "401 Unauthorized" on every request
-- Your access token has expired. The frontend should automatically refresh it. If it doesn't, try logging out and back in.
-- If the container was restarted without a static `SECRET_KEY`, all tokens are invalidated. Set `SECRET_KEY` in your `.env` to prevent this.
+The access token expired; the frontend refreshes it automatically on a 401. If it keeps
+happening, log out and back in. If the container restarted **without** a static `SECRET_KEY` and
+without a persisted `./data/app/.secret_key`, every session is invalidated — see
+[Configuration](../getting-started/configuration.md#environment-variables).
 
 ### Locked out — too many login attempts
-Login is rate-limited to 5 attempts per minute per IP. Wait 60 seconds and try again.
+- Too many requests from your IP → `429`, rate-limited by `LOGIN_RATE_LIMIT` (default
+  `10/minute`). Wait and retry.
+- Too many failed attempts for one **username** → `423 "Account temporarily locked"`, locked for
+  `LOCKOUT_MINUTES` (default 15). A correct login after the lockout window resets the counter.
+
+### Lost MFA device
+- If someone else still has admin access, they can clear your MFA:
+  `POST /api/users/{id}/mfa/reset` (**Settings > Users**). You then log in with just your
+  password and can set MFA up again.
+- If the locked-out account is the only admin and you also can't reset via the UI, reset the
+  password from the CLI (this doesn't touch MFA, but combined with a manual database check it's
+  the escape hatch):
+  ```bash
+  docker exec -it tunnbox python -m app.cli reset-password admin
+  ```
+  See [Security — resetting a password](./security.md#resetting-a-password-from-the-command-line).
+
+### Cookies not set / login doesn't stick behind a reverse proxy
+This is almost always `TRUSTED_PROXIES` or `COOKIE_SECURE` not matching your proxy setup:
+- If `TRUSTED_PROXIES` doesn't include your proxy's IP/CIDR, TunnBox doesn't trust
+  `X-Forwarded-Proto`, so `COOKIE_SECURE=auto` treats the request as plain HTTP and may not set the
+  `Secure` flag your browser expects over HTTPS (or vice versa, depending on your proxy).
+- Set `TRUSTED_PROXIES` to your proxy's IP or CIDR (e.g. `172.16.0.0/12` for the default Docker
+  bridge, or your proxy container's IP), and if `auto` still misbehaves, force
+  `COOKIE_SECURE=true` (when you're always behind HTTPS) or `false` (only for local/testing setups
+  without TLS).
+- See [Security — reverse proxy configuration](./security.md#reverse-proxy-configuration) and
+  [Production Deployment](../deployment/production.md).
 
 ### Forgot the admin password
-There is no password reset mechanism in the UI. To reset:
-1. Stop the container: `docker compose down`
-2. Delete the database: `rm ./data/app/tunnbox.db`
-3. Start the container: `docker compose up -d`
-4. Create a new admin account at `http://your-server:8000`
-
-::: warning
-Deleting the database removes all users, peer metadata, audit logs, and settings. WireGuard `.conf` files on disk are not affected, but TunnBox will no longer know about the peers in them.
-:::
+```bash
+docker exec -it tunnbox python -m app.cli reset-password <username>
+```
+This resets the password, clears any lockout, and revokes that user's other sessions — no data is
+lost. There's no need to delete the database.
 
 ## Interface Errors
 
-### "Interface name already exists"
-Each WireGuard interface must have a unique name. Check for existing interfaces in the dashboard.
+### "Interface name already exists" / port already in use
+Names and listen ports must be unique across interfaces. Check existing interfaces in the
+dashboard or `GET /api/interfaces`.
 
-### "Name too long"
-WireGuard interface names are limited to 15 characters (a Linux kernel restriction). Use short names like `wg0`, `wg1`, `office`.
+### "Name too long" / invalid name
+Interface names must match `^[a-zA-Z0-9_=+.-]{1,15}$` (a Linux kernel limit) and can't be `all`,
+`default`, or `lo`.
 
-### Interface won't come UP
-Check the container logs:
+### Interface won't come up
 ```bash
 docker compose logs tunnbox | grep -i error
 ```
+Common causes: the listen port is already in use by something else, the address CIDR is invalid,
+or the WireGuard kernel module isn't loaded (`docker exec tunnbox lsmod | grep wireguard`).
 
-Common causes:
-- Another process is using the listen port.
-- The address CIDR is invalid.
-- The WireGuard kernel module isn't loaded. Check: `docker exec tunnbox lsmod | grep wireguard`
+## Performance
 
-## Performance Issues
-
-### High CPU usage
-- Check if the container resource limits are too low. The default is 2 CPUs and 1 GB RAM.
-- A large number of peers (hundreds) on a single interface can increase CPU usage during stats polling.
+### High CPU
+Check container resource limits (default 2 CPUs / 1 GB). A large number of peers increases stats
+sampling cost; `STATS_SAMPLE_SECONDS` can be raised to reduce polling frequency.
 
 ### Database locked errors
-SQLite doesn't handle heavy concurrent writes well. For most TunnBox deployments (single admin, occasional changes), this should not be an issue. If you encounter lock errors, ensure only one instance of TunnBox is accessing the database.
+SQLite (WAL mode) handles TunnBox's normal load fine. If you see lock errors, make sure only one
+container instance is pointed at the same `./data/app/tunnbox.db`.
 
 ## Getting Help
 
-If your issue isn't covered here:
-1. Check the container logs: `docker compose logs tunnbox`
+1. `docker compose logs tunnbox`
 2. Check the [FAQ](./faq.md)
 3. Open an issue on [GitHub](https://github.com/pgorbunov/tunnbox/issues)

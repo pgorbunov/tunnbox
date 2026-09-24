@@ -1,127 +1,213 @@
 <script lang="ts">
-	import { goto } from "$app/navigation";
-	import { api } from "$lib/api";
-	import Button from "$lib/components/Button.svelte";
-	import { Shield } from "lucide-svelte";
+	/** First-run wizard: Create admin -> Server endpoint -> Done. */
+	import { goto } from '$app/navigation';
+	import { ArrowRight, Check, Network, PartyPopper } from 'lucide-svelte';
+	import { api, toApiError } from '$lib/api';
+	import { auth } from '$lib/stores/auth.svelte';
+	import { settingsStore } from '$lib/stores/settings.svelte';
+	import { validateEndpoint, validatePassword, validateUsername } from '$lib/utils/validation';
+	import Logo from '$lib/components/app/Logo.svelte';
+	import Alert from '$lib/components/ui/Alert.svelte';
+	import Button from '$lib/components/ui/Button.svelte';
+	import Input from '$lib/components/ui/Input.svelte';
 
-	let username = $state("admin");
-	let password = $state("");
-	let confirmPassword = $state("");
-	let loading = $state(false);
-	let error = $state("");
+	const STEPS = ['Create admin', 'Server endpoint', 'Done'];
+	let step = $state(auth.setupFlow ? 1 : 0);
 
-	async function handleSubmit(e: Event) {
-		e.preventDefault();
-		error = "";
+	let username = $state('');
+	let password = $state('');
+	let confirm = $state('');
+	let endpoint = $state('');
+	let submitting = $state(false);
+	let error = $state<string | null>(null);
+	let touched = $state<Record<string, boolean>>({});
 
-		if (!username.trim()) {
-			error = "Username is required";
-			return;
-		}
+	const errors = $derived({
+		username: validateUsername(username),
+		password: validatePassword(password, username),
+		confirm: confirm === password ? null : 'Passwords do not match',
+		endpoint: validateEndpoint(endpoint, { allowEmpty: true })
+	});
+	const show = (k: keyof typeof errors) => (touched[k] ? errors[k] : null);
 
-		if (password.length < 8) {
-			error = "Password must be at least 8 characters";
-			return;
-		}
-
-		if (password !== confirmPassword) {
-			error = "Passwords do not match";
-			return;
-		}
-
-		loading = true;
+	async function createAdmin() {
+		touched = { username: true, password: true, confirm: true };
+		if (errors.username || errors.password || errors.confirm || submitting) return;
+		submitting = true;
+		error = null;
 		try {
-			await api.setup(username.trim(), password);
-			window.location.href = "/login";
-		} catch (e) {
-			error = e instanceof Error ? e.message : "Setup failed";
+			await auth.setup(username.trim(), password);
+			await prefillEndpoint();
+			step = 1;
+		} catch (err) {
+			const e = toApiError(err);
+			error = e.status === 409 ? 'Setup was already completed. Please sign in instead.' : e.detail;
 		} finally {
-			loading = false;
+			submitting = false;
 		}
+	}
+
+	async function prefillEndpoint() {
+		try {
+			const s = await settingsStore.load(true);
+			endpoint = s.public_endpoint ?? '';
+		} catch {
+			endpoint = '';
+		}
+	}
+
+	$effect(() => {
+		if (step === 1 && auth.setupFlow && !endpoint) void prefillEndpoint();
+	});
+
+	async function saveEndpoint() {
+		touched = { ...touched, endpoint: true };
+		if (errors.endpoint || submitting) return;
+		submitting = true;
+		error = null;
+		try {
+			const s = await api.settings.update({ public_endpoint: endpoint.trim() });
+			settingsStore.set(s);
+			step = 2;
+		} catch (err) {
+			error = toApiError(err).detail;
+		} finally {
+			submitting = false;
+		}
+	}
+
+	async function finish(target: string) {
+		// Navigate first, then release the setup flag so the layout guard does not
+		// bounce us to the dashboard while /setup is still the current path.
+		await goto(target, { replaceState: true });
+		auth.finishSetupFlow();
 	}
 </script>
 
 <svelte:head>
-	<title>Setup - Tunnbox</title>
+	<title>Set up · TunnBox</title>
 </svelte:head>
 
-<div class="min-h-screen flex items-center justify-center p-4">
-	<div class="w-full max-w-sm">
-		<div class="text-center mb-8">
-			<div class="inline-flex p-3 rounded-xl bg-emerald-600/10 mb-4">
-				<Shield class="h-10 w-10 text-emerald-500" />
-			</div>
-			<h1 class="text-2xl font-bold text-white">Welcome to Tunnbox</h1>
-			<p class="text-slate-400 mt-2">
-				Create your admin account to get started
-			</p>
+<main class="flex min-h-dvh items-center justify-center bg-bg px-4 py-10">
+	<div class="w-full max-w-md">
+		<div class="mb-8 flex justify-center">
+			<Logo size={40} />
 		</div>
 
-		<div class="bg-slate-800/50 rounded-xl border border-slate-700/50 p-6">
-			<form onsubmit={handleSubmit} class="space-y-4">
-				{#if error}
-					<div
-						class="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm"
+		<ol class="mb-6 flex items-center justify-center gap-2 text-[13px]" aria-label="Setup steps">
+			{#each STEPS as label, i (label)}
+				<li class="flex items-center gap-2" aria-current={i === step ? 'step' : undefined}>
+					<span
+						class={`flex h-6 w-6 items-center justify-center rounded-full text-[12px] font-semibold ${i < step ? 'bg-accent text-accent-fg' : i === step ? 'bg-accent-soft text-accent ring-1 ring-accent' : 'bg-bg-subtle text-fg-subtle'}`}
 					>
-						{error}
-					</div>
-				{/if}
+						{#if i < step}<Check class="h-3.5 w-3.5" aria-hidden="true" />{:else}{i + 1}{/if}
+					</span>
+					<span class={i === step ? 'font-medium text-fg' : 'text-fg-subtle'}>{label}</span>
+					{#if i < STEPS.length - 1}<span class="h-px w-5 bg-border" aria-hidden="true"></span>{/if}
+				</li>
+			{/each}
+		</ol>
 
-				<div>
-					<label
-						for="username"
-						class="block text-sm font-medium text-slate-300 mb-1.5"
-					>
-						Admin Username
-					</label>
-					<input
-						type="text"
-						id="username"
+		<div class="rounded-lg border border-border bg-surface p-6 shadow-md sm:p-8">
+			{#if step === 0}
+				<h1 class="text-lg font-semibold text-fg" tabindex="-1">Welcome to TunnBox</h1>
+				<p class="mt-1 text-sm text-fg-muted">Create the administrator account for this server.</p>
+				<form
+					class="mt-6 flex flex-col gap-4"
+					onsubmit={(e) => {
+						e.preventDefault();
+						void createAdmin();
+					}}
+				>
+					{#if error}
+						<Alert tone="danger">{error}</Alert>
+					{/if}
+					<Input
+						label="Username"
 						bind:value={username}
 						autocomplete="username"
-						class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+						required
+						autocapitalize="off"
+						spellcheck={false}
+						error={show('username')}
+						onblur={() => (touched = { ...touched, username: true })}
 					/>
-				</div>
-
-				<div>
-					<label
-						for="password"
-						class="block text-sm font-medium text-slate-300 mb-1.5"
-					>
-						Password
-					</label>
-					<input
+					<Input
+						label="Password"
 						type="password"
-						id="password"
 						bind:value={password}
 						autocomplete="new-password"
-						class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+						required
+						hint="10–128 characters; avoid common passwords."
+						error={show('password')}
+						onblur={() => (touched = { ...touched, password: true })}
 					/>
-					<p class="mt-1 text-xs text-slate-500">
-						Minimum 8 characters
-					</p>
-				</div>
-
-				<div>
-					<label
-						for="confirm_password"
-						class="block text-sm font-medium text-slate-300 mb-1.5"
-					>
-						Confirm Password
-					</label>
-					<input
+					<Input
+						label="Confirm password"
 						type="password"
-						id="confirm_password"
-						bind:value={confirmPassword}
+						bind:value={confirm}
 						autocomplete="new-password"
-						class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+						required
+						error={show('confirm')}
+						onblur={() => (touched = { ...touched, confirm: true })}
 					/>
-				</div>
-
-				<Button type="submit" {loading} class="w-full"
-					>Create Account</Button
+					<Button variant="primary" type="submit" block size="lg" loading={submitting}>
+						Create account
+						<ArrowRight class="h-4 w-4" aria-hidden="true" />
+					</Button>
+				</form>
+			{:else if step === 1}
+				<h1 class="text-lg font-semibold text-fg" tabindex="-1">Server endpoint</h1>
+				<p class="mt-1 text-sm text-fg-muted">
+					The public hostname or IP that clients use to reach this server. You can change it later in
+					Settings.
+				</p>
+				<form
+					class="mt-6 flex flex-col gap-4"
+					onsubmit={(e) => {
+						e.preventDefault();
+						void saveEndpoint();
+					}}
 				>
-			</form>
+					{#if error}
+						<Alert tone="danger">{error}</Alert>
+					{/if}
+					<Input
+						label="Public endpoint"
+						bind:value={endpoint}
+						mono
+						placeholder="vpn.example.com"
+						hint="Hostname or IP only — the port comes from each interface."
+						error={show('endpoint')}
+						onblur={() => (touched = { ...touched, endpoint: true })}
+					/>
+					<Button variant="primary" type="submit" block size="lg" loading={submitting}>
+						Continue
+						<ArrowRight class="h-4 w-4" aria-hidden="true" />
+					</Button>
+					<Button variant="ghost" block onclick={() => (step = 2)} disabled={submitting}>Skip for now</Button>
+				</form>
+			{:else}
+				<div class="flex flex-col items-center text-center">
+					<div
+						class="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-accent-soft text-accent"
+						aria-hidden="true"
+					>
+						<PartyPopper class="h-7 w-7" />
+					</div>
+					<h1 class="text-lg font-semibold text-fg" tabindex="-1">You're all set</h1>
+					<p class="mt-1 text-sm text-fg-muted">
+						Create your first WireGuard interface, then add peers and share their configs in one click.
+					</p>
+					<div class="mt-6 flex w-full flex-col gap-2">
+						<Button variant="primary" size="lg" block onclick={() => void finish('/interfaces?new=1')}>
+							<Network class="h-4 w-4" aria-hidden="true" />
+							Create your first interface
+						</Button>
+						<Button variant="ghost" block onclick={() => void finish('/')}>Go to dashboard</Button>
+					</div>
+				</div>
+			{/if}
 		</div>
 	</div>
-</div>
+</main>

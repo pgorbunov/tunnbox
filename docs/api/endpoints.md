@@ -1,534 +1,233 @@
 # API Reference
 
-TunnBox provides a RESTful API for automation and integration. All endpoints use JSON.
+TunnBox exposes a REST API under `/api`. Every endpoint returns JSON (except config/QR/backup
+downloads). Errors are `{"detail": string, "code"?: string}`.
 
 ## Authentication
 
-All endpoints require a Bearer token unless noted otherwise.
+Every endpoint except the ones marked **public** below requires a principal: a logged-in session
+(access token) or an API key.
 
 ```
-Authorization: Bearer <access_token>
+Authorization: Bearer <access-jwt>     # session, from /api/auth/login
+Authorization: Bearer tb_<key>         # API key
+X-API-Key: tb_<key>                    # API key, alternate header
 ```
 
-Obtain a token by calling `POST /api/auth/login`.
+See [Security](../guides/security.md#authentication-model) for the session/refresh model and
+[API Keys & Automation](../guides/api-keys-and-automation.md) for key scopes and usage. Endpoints
+below are grouped by tag and note the minimum **role** and, where applicable, the **API key
+scope** required (`require_role("operator")` accepts operator or admin).
 
-## Base URL
+## Base URL & Interactive Docs
 
 ```
-http://your-server:8000/api
+https://your-server/api
 ```
 
-## Interactive Documentation
-
-Start the server and visit:
-- **Swagger UI**: `http://your-server:8000/api/docs`
-- **ReDoc**: `http://your-server:8000/api/redoc`
-- **OpenAPI Schema**: `http://your-server:8000/api/openapi.json`
-
----
-
-## Health Check
-
-### `GET /api/health`
-
-No authentication required.
-
-```bash
-curl http://localhost:8000/api/health
-```
-
-```json
-{"status": "healthy"}
-```
-
----
-
-## Authentication
-
-### `POST /api/auth/setup`
-
-Create the initial admin account. Only works when no users exist.
-
-```bash
-curl -X POST http://localhost:8000/api/auth/setup \
-  -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "securepassword"}'
-```
-
-```json
-{"id": 1, "username": "admin", "is_admin": true}
-```
-
-### `GET /api/auth/check-setup`
-
-Check if initial setup is needed. No authentication required.
-
-```bash
-curl http://localhost:8000/api/auth/check-setup
-```
-
-```json
-{"setup_required": true}
-```
-
-### `POST /api/auth/login`
-
-Authenticate and receive an access token. Uses OAuth2 form encoding.
-
-```bash
-curl -X POST http://localhost:8000/api/auth/login \
-  -d "username=admin&password=securepassword"
-```
-
-```json
-{"access_token": "eyJ...", "token_type": "bearer"}
-```
-
-A refresh token is set as an httpOnly cookie in the response.
-
-### `POST /api/auth/refresh`
-
-Refresh the access token using the cookie-based refresh token.
-
-```bash
-curl -X POST http://localhost:8000/api/auth/refresh \
-  --cookie "refresh_token=<token>"
-```
-
-```json
-{"access_token": "eyJ...", "token_type": "bearer"}
-```
-
-### `POST /api/auth/logout`
-
-Invalidate the refresh token.
-
-```bash
-curl -X POST http://localhost:8000/api/auth/logout \
-  -H "Authorization: Bearer <token>"
-```
-
-### `GET /api/auth/me`
-
-Get the current user.
-
-```bash
-curl http://localhost:8000/api/auth/me \
-  -H "Authorization: Bearer <token>"
-```
-
-```json
-{"id": 1, "username": "admin", "is_admin": true}
-```
-
-### `PATCH /api/auth/password`
-
-Change the current user's password.
-
-```bash
-curl -X PATCH http://localhost:8000/api/auth/password \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{"current_password": "oldpass", "new_password": "newpass123"}'
-```
-
-Password must be at least 8 characters.
-
----
-
-## Interfaces
-
-### `GET /api/interfaces`
-
-List all WireGuard interfaces.
-
-```bash
-curl http://localhost:8000/api/interfaces \
-  -H "Authorization: Bearer <token>"
-```
-
-```json
-[
-  {
-    "name": "wg0",
-    "listen_port": 51820,
-    "address": "10.0.0.1/24",
-    "public_key": "abc123...",
-    "is_active": true,
-    "peer_count": 5,
-    "active_peer_count": 2,
-    "total_transfer_rx": 1048576,
-    "total_transfer_tx": 2097152,
-    "dns": "1.1.1.1",
-    "post_up": "",
-    "post_down": ""
-  }
-]
-```
-
-### `POST /api/interfaces`
-
-Create a new interface. Returns `201 Created`.
-
-```bash
-curl -X POST http://localhost:8000/api/interfaces \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "wg0",
-    "listen_port": 51820,
-    "address": "10.0.0.1/24",
-    "dns": "1.1.1.1"
-  }'
-```
-
-| Field | Type | Required | Constraints |
-|-------|------|----------|-------------|
-| `name` | string | yes | Max 15 chars, alphanumeric + `_` `-` |
-| `listen_port` | integer | yes | 1–65535 |
-| `address` | string | yes | CIDR notation (e.g., `10.0.0.1/24`) |
-| `dns` | string | no | IP or hostname |
-| `post_up` | string | no | Requires `WG_ALLOW_CUSTOM_SCRIPTS=true` for non-iptables commands |
-| `post_down` | string | no | Same as post_up |
-
-### `GET /api/interfaces/{name}`
-
-Get a specific interface.
-
-```bash
-curl http://localhost:8000/api/interfaces/wg0 \
-  -H "Authorization: Bearer <token>"
-```
-
-### `PUT /api/interfaces/{name}`
-
-Update an interface.
-
-```bash
-curl -X PUT http://localhost:8000/api/interfaces/wg0 \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{"dns": "8.8.8.8", "listen_port": 51821}'
-```
-
-### `DELETE /api/interfaces/{name}`
-
-Delete an interface and all its peers. Returns `204 No Content`.
-
-```bash
-curl -X DELETE http://localhost:8000/api/interfaces/wg0 \
-  -H "Authorization: Bearer <token>"
-```
-
-### `POST /api/interfaces/{name}/up`
-
-Bring an interface up.
-
-```bash
-curl -X POST http://localhost:8000/api/interfaces/wg0/up \
-  -H "Authorization: Bearer <token>"
-```
-
-```json
-{"message": "Interface wg0 is now up"}
-```
-
-### `POST /api/interfaces/{name}/down`
-
-Bring an interface down.
-
-```bash
-curl -X POST http://localhost:8000/api/interfaces/wg0/down \
-  -H "Authorization: Bearer <token>"
-```
-
-### `GET /api/interfaces/{name}/stats`
-
-Get real-time statistics for an interface and its peers.
-
-```bash
-curl http://localhost:8000/api/interfaces/wg0/stats \
-  -H "Authorization: Bearer <token>"
-```
-
-```json
-{
-  "name": "wg0",
-  "is_active": true,
-  "peer_count": 3,
-  "total_transfer_rx": 1048576,
-  "total_transfer_tx": 2097152,
-  "peers": [
-    {
-      "public_key": "abc...",
-      "endpoint": "203.0.113.1:51820",
-      "latest_handshake": 1706140800,
-      "transfer_rx": 524288,
-      "transfer_tx": 1048576
-    }
-  ]
-}
-```
-
----
-
-## Peers
-
-### `GET /api/interfaces/{interface_name}/peers`
-
-List all peers for an interface.
-
-```bash
-curl http://localhost:8000/api/interfaces/wg0/peers \
-  -H "Authorization: Bearer <token>"
-```
-
-```json
-[
-  {
-    "name": "My Laptop",
-    "public_key": "xyz...",
-    "allowed_ips": "10.0.0.2/32",
-    "endpoint": "203.0.113.1:54321",
-    "latest_handshake": 1706140800,
-    "transfer_rx": 524288,
-    "transfer_tx": 1048576,
-    "is_online": true,
-    "persistent_keepalive": 25
-  }
-]
-```
-
-### `POST /api/interfaces/{interface_name}/peers`
-
-Add a new peer. Returns `201 Created`.
-
-```bash
-curl -X POST http://localhost:8000/api/interfaces/wg0/peers \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "My Laptop",
-    "allowed_ips": "auto",
-    "persistent_keepalive": 25
-  }'
-```
-
-| Field | Type | Required | Constraints |
-|-------|------|----------|-------------|
-| `name` | string | yes | Max 64 chars |
-| `allowed_ips` | string | yes | CIDR or `"auto"` for next available IP |
-| `persistent_keepalive` | integer | no | 0–65535 seconds (default: 25) |
-
-### `GET /api/interfaces/{interface_name}/peers/{public_key}`
-
-Get a specific peer.
-
-### `PUT /api/interfaces/{interface_name}/peers/{public_key}`
-
-Update a peer.
-
-```bash
-curl -X PUT http://localhost:8000/api/interfaces/wg0/peers/xyz... \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Work Laptop", "persistent_keepalive": 30}'
-```
-
-### `DELETE /api/interfaces/{interface_name}/peers/{public_key}`
-
-Remove a peer. Returns `204 No Content`.
-
-```bash
-curl -X DELETE http://localhost:8000/api/interfaces/wg0/peers/xyz... \
-  -H "Authorization: Bearer <token>"
-```
-
-### `GET /api/interfaces/{interface_name}/peers/config/{public_key}`
-
-Download a peer's WireGuard client configuration file.
-
-```bash
-curl http://localhost:8000/api/interfaces/wg0/peers/config/xyz... \
-  -H "Authorization: Bearer <token>" \
-  -o peer.conf
-```
-
-Returns a `.conf` file (content-type: `text/plain`) ready to import into any WireGuard client.
-
-### `POST /api/interfaces/{interface_name}/peers/qr/{public_key}`
-
-Generate a signed QR token for secure QR code display. The token expires in 5 minutes.
-
-```bash
-curl -X POST http://localhost:8000/api/interfaces/wg0/peers/qr/xyz... \
-  -H "Authorization: Bearer <token>"
-```
-
-```json
-{"qr_token": "eyJ..."}
-```
-
-### `POST /api/qr-image`
-
-Get a QR code PNG image using a signed token.
-
-```bash
-curl -X POST http://localhost:8000/api/qr-image \
-  -H "Content-Type: application/json" \
-  -d '{"token": "eyJ..."}' \
-  -o qrcode.png
-```
-
-Returns a PNG image. No authentication header required — the signed token serves as authorization.
-
-### `GET /api/interfaces/{interface_name}/next-ip`
-
-Get the next available IP address in the interface's subnet.
-
-```bash
-curl http://localhost:8000/api/interfaces/wg0/next-ip \
-  -H "Authorization: Bearer <token>"
-```
-
-```json
-{"next_ip": "10.0.0.2/32"}
-```
-
----
-
-## Settings
-
-### `GET /api/settings`
-
-Get server settings (merges environment config with database overrides).
-
-```bash
-curl http://localhost:8000/api/settings \
-  -H "Authorization: Bearer <token>"
-```
-
-```json
-{
-  "public_endpoint": "203.0.113.1",
-  "wg_default_dns": "1.1.1.1",
-  "wg_config_path": "/etc/wireguard"
-}
-```
-
-### `PATCH /api/settings`
-
-Update server settings. Admin only.
-
-```bash
-curl -X PATCH http://localhost:8000/api/settings \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{"public_endpoint": "vpn.example.com"}'
-```
-
-### `GET /api/settings/retention`
-
-Get data retention settings.
-
-```json
-{"enabled": true, "logs_retention_days": 90}
-```
-
-### `PATCH /api/settings/retention`
-
-Update data retention settings. Admin only.
-
-```bash
-curl -X PATCH http://localhost:8000/api/settings/retention \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{"enabled": true, "logs_retention_days": 30}'
-```
-
-`logs_retention_days` must be between 1 and 365.
-
-### `GET /api/settings/timezone`
-
-Get the user's timezone preference.
-
-```json
-{"timezone": "UTC"}
-```
-
-### `PATCH /api/settings/timezone`
-
-Update timezone preference.
-
-```bash
-curl -X PATCH http://localhost:8000/api/settings/timezone \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{"timezone": "America/New_York"}'
-```
-
----
-
-## Privacy / Data Export
-
-### `GET /api/privacy/export`
-
-Export all non-sensitive data as a JSON file. Admin only.
-
-```bash
-curl http://localhost:8000/api/privacy/export \
-  -H "Authorization: Bearer <token>" \
-  -o export.json
-```
-
-The export includes users (no passwords), peer metadata (no private keys), audit logs, and settings. An audit log entry is created for the export itself.
-
----
-
-## System
-
-### `GET /api/system/info`
-
-Get version and system information.
-
-```bash
-curl http://localhost:8000/api/system/info \
-  -H "Authorization: Bearer <token>"
-```
-
-```json
-{
-  "frontend_version": "1.0.0",
-  "backend_version": "1.0.0",
-  "wireguard_version": "1.0.20210914",
-  "docker_version": "24.0.7",
-  "os_name": "Linux",
-  "os_version": "6.1.0",
-  "python_version": "3.11.6",
-  "database_type": "sqlite",
-  "github_url": "https://github.com/pgorbunov/tunnbox",
-  "documentation_url": "https://pgorbunov.github.io/tunnbox",
-  "license": "MIT"
-}
-```
-
----
+- Swagger UI: `/api/docs`
+- ReDoc: `/api/redoc`
+- Raw schema: `/api/openapi.json`
+
+These three stay public even in production.
 
 ## Error Responses
 
-All errors return JSON with a `detail` field:
-
-```json
-{"detail": "Not authenticated"}
-```
-
 | Status | Meaning |
 |--------|---------|
-| 400 | Bad request (validation error) |
+| 400 | Bad request / validation error |
 | 401 | Not authenticated or token expired |
-| 403 | Forbidden (insufficient permissions) |
-| 404 | Resource not found |
-| 409 | Conflict (e.g., duplicate interface name) |
-| 422 | Validation error (Pydantic) |
-| 429 | Rate limited (too many login attempts) |
-| 500 | Internal server error |
+| 403 | Forbidden — role or scope insufficient |
+| 404 | Not found |
+| 409 | Conflict (duplicate name/port, last admin, etc.) |
+| 410 | Gone — share link expired or exhausted |
+| 422 | Request body failed schema validation |
+| 423 | Account locked (login only) |
+| 429 | Rate limited (`Retry-After` header set) |
+
+## Common Types
+
+```ts
+Role = "admin" | "operator" | "viewer"
+User = { id, username, role, is_active, totp_enabled, last_login_at, created_at }
+Interface = { id, name, public_key, address, listen_port, dns, mtu, post_up, post_down,
+              public_endpoint, enabled, is_active, peer_count, online_peer_count,
+              rx_total, tx_total, created_at, updated_at }
+Peer = { id, interface_id, interface_name, name, public_key, allowed_ips, client_allowed_ips,
+         client_dns, persistent_keepalive, enabled, expires_at, notes, has_private_key,
+         has_preshared_key, endpoint, latest_handshake_at, is_online, rx_total, tx_total,
+         created_at, updated_at, status: "online"|"offline"|"disabled"|"expired" }
+Session = { id, ip, user_agent, created_at, last_used_at, expires_at, current }
+ApiKey = { id, name, prefix, scopes, expires_at, last_used_at, created_at, revoked_at }
+AuditEntry = { id, user_id, username, action, target, details, ip, created_at }
+Page<T> = { items: T[], total, page, page_size }
+```
+
+---
+
+## auth (`/api/auth`)
+
+| Method & Path | Role | Notes |
+|---|---|---|
+| `GET /status` | public | `{ setup_required, version }` |
+| `POST /setup` | public | `{username, password}` → session. Only when no users exist; `409` otherwise |
+| `POST /login` | public, rate limited | `{username, password}` → session, or `{mfa_required: true, mfa_token}` |
+| `POST /login/mfa` | public, rate limited | `{mfa_token, code}` → session (`code` = TOTP or recovery code) |
+| `POST /refresh` | public (refresh cookie) | Rotates the refresh cookie, returns a new access token |
+| `POST /logout` | session | `204`; revokes the current session, clears the cookie |
+| `GET /me` | any | Current `User` |
+| `PATCH /me/password` | any | `{current_password, new_password}` → `204`; revokes other sessions |
+| `GET /sessions` | any | List the caller's sessions |
+| `DELETE /sessions` | any | `204`; revoke all sessions except the current one |
+| `DELETE /sessions/{id}` | any | `204`; revoke one session |
+
+### Login
+
+```bash
+curl -X POST https://vpn.example.com/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "correct horse battery staple"}' \
+  -c cookies.txt
+```
+
+If the account has MFA enabled, this returns `{"mfa_required": true, "mfa_token": "..."}` instead
+of a session. Complete it with:
+
+```bash
+curl -X POST https://vpn.example.com/api/auth/login/mfa \
+  -H "Content-Type: application/json" \
+  -d '{"mfa_token": "<from previous step>", "code": "123456"}' \
+  -c cookies.txt
+```
+
+Both return `{ access_token, token_type: "bearer", expires_in, user }` and set the `tb_refresh`
+httpOnly cookie (path `/api/auth`).
+
+## mfa (`/api/mfa`)
+
+Session principals only — API keys cannot call these.
+
+| Method & Path | Notes |
+|---|---|
+| `POST /setup` | `{password}` → `{secret, otpauth_uri, qr_svg}`; not enabled yet |
+| `POST /enable` | `{code, password}` → `{recovery_codes: string[]}` (10 codes, shown once) |
+| `POST /disable` | `{password, code}` → `204` |
+| `POST /recovery-codes` | `{password}` → `{recovery_codes: string[]}` (regenerate) |
+
+A TOTP `code` cannot be reused within its time step, and the `mfa_token` from `/api/auth/login` is
+single-use; failed codes count toward account lockout the same as failed passwords. See
+[Security — multi-factor authentication](../guides/security.md#multi-factor-authentication).
+
+## api-keys (`/api/api-keys`)
+
+Session principals only.
+
+| Method & Path | Notes |
+|---|---|
+| `GET /` | Caller's keys; admin: `?all=true` for everyone's |
+| `POST /` | `{name, scopes: string[], expires_at?}` → `ApiKey & {key: string}` (plaintext shown once) |
+| `DELETE /{id}` | `204`; revoke |
+
+## users (`/api/users`) — admin only
+
+| Method & Path | Notes |
+|---|---|
+| `GET /` | List users |
+| `POST /` | `{username, password, role}` → `User` |
+| `PATCH /{id}` | `{role?, is_active?, password?}` → `User`; can't demote/disable yourself or remove the last active admin |
+| `DELETE /{id}` | `204`; same guards |
+| `POST /{id}/mfa/reset` | `204`; admin clears a user's MFA |
+
+## interfaces (`/api/interfaces`)
+
+| Method & Path | Role | Scope | Notes |
+|---|---|---|---|
+| `GET /` | viewer | `read` | List interfaces |
+| `POST /` | operator | `interfaces:write` | `201 Interface` |
+| `GET /{name}` | viewer | `read` | |
+| `PATCH /{name}` | operator | `interfaces:write` | Restarts if address/port/mtu/scripts change while active |
+| `DELETE /{name}` | operator | `interfaces:write` | `204`; brings down, deletes conf + peers |
+| `POST /{name}/up` | operator | `interfaces:write` | |
+| `POST /{name}/down` | operator | `interfaces:write` | |
+| `GET /{name}/config` | admin | `admin` | `text/plain` server `.conf`, contains the private key |
+| `GET /{name}/stats` | viewer | `read` | `?range=1h\|6h\|24h\|7d\|30d` |
+| `GET /{name}/peers` | viewer | `read` | `?q=&status=&sort=name\|handshake\|rx\|tx\|created&order=asc\|desc` |
+| `POST /{name}/peers` | operator | `peers:write` | `201 Peer` |
+| `GET /{name}/next-ip` | viewer | `read` | `{allowed_ips}` |
+
+## peers
+
+| Method & Path | Role | Scope | Notes |
+|---|---|---|---|
+| `GET /api/peers` | viewer | `read` | Global search: `?q=&interface=&status=&page=&page_size=` → `Page<Peer>` |
+| `POST /api/peers/bulk` | operator | `peers:write` | `{ids: int[], action: "enable"\|"disable"\|"delete"}` → `{affected: int}` |
+| `GET /api/peers/{id}` | viewer | `read` | |
+| `PATCH /api/peers/{id}` | operator | `peers:write` | |
+| `DELETE /api/peers/{id}` | operator | `peers:write` | `204` |
+| `POST /api/peers/{id}/enable` | operator | `peers:write` | |
+| `POST /api/peers/{id}/disable` | operator | `peers:write` | |
+| `POST /api/peers/{id}/rotate-keys` | operator | `peers:write` | New keypair + PSK; old client config stops working |
+| `GET /api/peers/{id}/config` | operator | `peers:write` | `text/plain`, attachment `<name>.conf`; `?allowed_ips=` override; `404` if no stored private key. Requires operator/`peers:write` because it exposes the private key and PSK |
+| `GET /api/peers/{id}/qr` | operator | `peers:write` | `image/png`; same override param and requirement |
+| `POST /api/peers/{id}/share` | operator | `peers:write` | `{expires_in_hours?: 24, max_uses?: 1}` → `{url_path, token, expires_at, max_uses}` |
+| `GET /api/peers/{id}/stats` | viewer | `read` | Same shape as interface stats |
+
+### Create a peer with auto IP assignment
+
+```bash
+curl -X POST https://vpn.example.com/api/interfaces/wg0/peers \
+  -H "Authorization: Bearer <access-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Alice'"'"'s laptop", "allowed_ips": "auto", "expires_at": null}'
+```
+
+### Download a config with an API key
+
+```bash
+curl https://vpn.example.com/api/peers/42/config \
+  -H "Authorization: Bearer tb_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" \
+  -o alice-laptop.conf
+```
+
+## share (`/api/share`) — public, rate limited (20/min per IP)
+
+| Method & Path | Notes |
+|---|---|
+| `GET /{token}` | `{peer_name, interface_name, expires_at, remaining_uses, config, qr_png_base64}`; increments uses; `404`/`410` when invalid, expired, or exhausted; audit-logs `peer.share_used` |
+
+## stats (`/api/stats`)
+
+| Method & Path | Role | Scope |
+|---|---|---|
+| `GET /overview?range=24h` | viewer | `read` |
+
+Returns `{interfaces_total, interfaces_active, peers_total, peers_online, peers_disabled, peers_expiring_7d, rx_total, tx_total, series: [{ts, rx, tx}], top_peers: [...] (5), recent_activity: AuditEntry[] (10)}`.
+
+## audit (`/api/audit`) — operator role, `read` scope
+
+| Method & Path | Notes |
+|---|---|
+| `GET /` | `?page&page_size&action&username&q&from&to` → `Page<AuditEntry>` |
+| `GET /actions` | Distinct action names in use |
+| `GET /export.csv` | Same filters, `text/csv` |
+
+## settings (`/api/settings`)
+
+| Method & Path | Role | Notes |
+|---|---|---|
+| `GET /` | viewer | `{public_endpoint, default_dns, default_mtu, default_keepalive, default_client_allowed_ips, audit_retention_days, stats_retention_days, ui_refresh_seconds, custom_scripts_allowed}` |
+| `PATCH /` | admin | Partial update; validated (`public_endpoint` hostname/IP without port, `default_dns` a list of IPs, `default_mtu` 1280–1500) |
+
+## system (`/api/system`)
+
+| Method & Path | Role | Notes |
+|---|---|---|
+| `GET /health` | public | `{status: "ok"}`; also served at `/api/health` |
+| `GET /info` | viewer | `{version, backend_mode, wireguard_version, kernel_module, python_version, os, uptime_seconds, database_size_bytes, config_path, hostname}` |
+| `GET /backup` | admin | `application/gzip` tar of DB + rendered configs; audited |
+| `GET /export` | admin | JSON export of users/interfaces/peers/settings/audit, no secrets; audited |
+
+---
+
+See also: [API Keys & Automation](../guides/api-keys-and-automation.md),
+[Security — authentication model](../guides/security.md#authentication-model).

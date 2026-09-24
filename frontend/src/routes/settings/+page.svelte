@@ -1,1446 +1,587 @@
 <script lang="ts">
-	import { onMount } from "svelte";
-	import { beforeNavigate } from "$app/navigation";
-	import { user } from "$lib/stores/auth";
-	import { theme, type Theme } from "$lib/stores/theme";
+	/** Settings: General | Security | API keys | Users (admin) | Data | Appearance | About, via ?tab=. */
+	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import {
-		api,
-		type ServerSettings,
-		type SystemInfo,
-		type DataRetentionSettings,
-	} from "$lib/api";
-	import { toast } from "$lib/stores/toast";
-	import Button from "$lib/components/Button.svelte";
-	import PasswordChangeModal from "$lib/components/PasswordChangeModal.svelte";
-	import CollapsibleSection from "$lib/components/CollapsibleSection.svelte";
-	import ConfirmationModal from "$lib/components/ConfirmationModal.svelte";
-	import {
-		Shield,
-		Server,
-		Key,
-		Edit,
-		Save,
-		X,
-		Info,
-		HelpCircle,
-		ExternalLink,
-		RefreshCw,
-		AlertTriangle,
-		Palette,
-		Sun,
-		Moon,
-		Monitor,
+		Database,
 		Download,
-		Clock,
-	} from "lucide-svelte";
+		ExternalLink,
+		Info,
+		KeyRound,
+		Palette,
+		ShieldCheck,
+		SlidersHorizontal,
+		Users
+	} from 'lucide-svelte';
+	import { api, toApiError } from '$lib/api';
+	import type { Settings, SettingsUpdateRequest, SystemInfo } from '$lib/api/types';
+	import { auth } from '$lib/stores/auth.svelte';
+	import { settingsStore, type Density } from '$lib/stores/settings.svelte';
+	import { themeStore, type Theme } from '$lib/stores/theme.svelte';
+	import { toast } from '$lib/stores/toast.svelte';
+	import { formatBytes, formatDuration, joinList, splitList } from '$lib/utils/format';
+	import {
+		validateCidrList,
+		validateDnsList,
+		validateEndpoint,
+		validateKeepalive,
+		validateMtu
+	} from '$lib/utils/validation';
+	import PageHeader from '$lib/components/app/PageHeader.svelte';
+	import ApiKeysPanel from '$lib/components/security/ApiKeysPanel.svelte';
+	import MfaCard from '$lib/components/security/MfaCard.svelte';
+	import PasswordChangeForm from '$lib/components/security/PasswordChangeForm.svelte';
+	import SessionsList from '$lib/components/security/SessionsList.svelte';
+	import UsersPanel from '$lib/components/security/UsersPanel.svelte';
+	import Alert from '$lib/components/ui/Alert.svelte';
+	import Badge from '$lib/components/ui/Badge.svelte';
+	import Button from '$lib/components/ui/Button.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
+	import ErrorState from '$lib/components/ui/ErrorState.svelte';
+	import Input from '$lib/components/ui/Input.svelte';
+	import SegmentedControl from '$lib/components/ui/SegmentedControl.svelte';
+	import Skeleton from '$lib/components/ui/Skeleton.svelte';
+	import Switch from '$lib/components/ui/Switch.svelte';
+	import Tabs from '$lib/components/ui/Tabs.svelte';
 
-	let passwordModalOpen = $state(false);
-	let unsavedChangesModalOpen = $state(false);
-	let pendingNavigation: (() => void) | null = null;
+	type Tab = 'general' | 'security' | 'api-keys' | 'users' | 'data' | 'appearance' | 'about';
+	const TAB_IDS: Tab[] = ['general', 'security', 'api-keys', 'users', 'data', 'appearance', 'about'];
 
-	// Server settings state
-	let settings = $state<ServerSettings | null>(null);
-	let loading = $state(true);
+	const isAdmin = $derived(auth.can('admin'));
+	const tabs = $derived([
+		{ id: 'general' as const, label: 'General', icon: SlidersHorizontal },
+		{ id: 'security' as const, label: 'Security', icon: ShieldCheck },
+		{ id: 'api-keys' as const, label: 'API keys', icon: KeyRound },
+		{ id: 'users' as const, label: 'Users', icon: Users, hidden: !isAdmin },
+		{ id: 'data' as const, label: 'Data', icon: Database },
+		{ id: 'appearance' as const, label: 'Appearance', icon: Palette },
+		{ id: 'about' as const, label: 'About', icon: Info }
+	]);
 
-	// System info state
-	let systemInfo = $state<SystemInfo | null>(null);
-	let systemInfoLoading = $state(false);
+	function tabFromUrl(): Tab {
+		const t = page.url.searchParams.get('tab');
+		return TAB_IDS.includes(t as Tab) ? (t as Tab) : 'general';
+	}
+	let tab = $state<Tab>(tabFromUrl());
+	$effect(() => {
+		tab = tabFromUrl();
+	});
+	function selectTab(t: Tab) {
+		void goto(t === 'general' ? '/settings' : `/settings?tab=${t}`, {
+			replaceState: true,
+			noScroll: true,
+			keepFocus: true
+		});
+	}
 
-	// Editing state
-	let editingEndpoint = $state(false);
-	let editingDns = $state(false);
-	let endpointValue = $state("");
-	let dnsValue = $state("");
-	let originalEndpointValue = $state("");
-	let originalDnsValue = $state("");
-	let endpointError = $state("");
-	let dnsError = $state("");
+	// ---- server settings ------------------------------------------------
+	let server = $state<Settings | null>(null);
+	let loadError = $state<string | null>(null);
 	let saving = $state(false);
+	let formError = $state<string | null>(null);
 
-	// Track unsaved changes
-	let hasUnsavedChanges = $derived(
-		(editingEndpoint && endpointValue !== originalEndpointValue) ||
-			(editingDns && dnsValue !== originalDnsValue),
-	);
+	let endpoint = $state('');
+	let dns = $state('');
+	let mtu = $state('');
+	let keepalive = $state('25');
+	let clientRoutes = $state('');
+	let auditRetention = $state('90');
+	let statsRetention = $state('90');
+	let uiRefresh = $state('10');
 
-	onMount(async () => {
-		await loadSettings();
-		await loadSystemInfo();
+	function fill(s: Settings) {
+		endpoint = s.public_endpoint ?? '';
+		dns = s.default_dns ?? '';
+		mtu = s.default_mtu === null ? '' : String(s.default_mtu);
+		keepalive = String(s.default_keepalive);
+		clientRoutes = s.default_client_allowed_ips;
+		auditRetention = String(s.audit_retention_days);
+		statsRetention = String(s.stats_retention_days);
+		uiRefresh = String(s.ui_refresh_seconds);
+	}
 
-		// Browser navigation warning
-		const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-			if (hasUnsavedChanges) {
-				e.preventDefault();
-				e.returnValue = "";
-			}
-		};
-		window.addEventListener("beforeunload", handleBeforeUnload);
-
-		return () => {
-			window.removeEventListener("beforeunload", handleBeforeUnload);
-		};
+	async function loadServer() {
+		loadError = null;
+		try {
+			server = await settingsStore.load(true);
+			fill(server);
+		} catch (err) {
+			loadError = toApiError(err).detail;
+		}
+	}
+	$effect(() => {
+		void loadServer();
 	});
 
-	// Svelte navigation guard
-	beforeNavigate((navigation) => {
-		if (hasUnsavedChanges) {
-			navigation.cancel();
-			unsavedChangesModalOpen = true;
-			pendingNavigation = () => navigation.complete();
-		}
+	const generalErrors = $derived({
+		endpoint: validateEndpoint(endpoint, { allowEmpty: true }),
+		dns: validateDnsList(dns),
+		mtu: validateMtu(mtu),
+		keepalive: validateKeepalive(keepalive),
+		clientRoutes: validateCidrList(clientRoutes)
+	});
+	const dataErrors = $derived({
+		auditRetention:
+			Number.isInteger(Number(auditRetention)) && Number(auditRetention) >= 1
+				? null
+				: 'Enter a whole number of days (≥ 1)',
+		statsRetention:
+			Number.isInteger(Number(statsRetention)) && Number(statsRetention) >= 1
+				? null
+				: 'Enter a whole number of days (≥ 1)',
+		uiRefresh:
+			Number.isInteger(Number(uiRefresh)) && Number(uiRefresh) >= 3 && Number(uiRefresh) <= 300
+				? null
+				: 'Between 3 and 300 seconds'
 	});
 
-	async function loadSettings() {
+	async function save(body: SettingsUpdateRequest, label: string) {
+		saving = true;
+		formError = null;
 		try {
-			loading = true;
-			settings = await api.getSettings();
-			endpointValue = settings.public_endpoint;
-			dnsValue = settings.wg_default_dns;
-			originalEndpointValue = settings.public_endpoint;
-			originalDnsValue = settings.wg_default_dns;
-		} catch (e) {
-			toast.error(
-				e instanceof Error ? e.message : "Failed to load settings",
-			);
-		} finally {
-			loading = false;
-		}
-	}
-
-	async function loadSystemInfo() {
-		try {
-			systemInfoLoading = true;
-			systemInfo = await api.getSystemInfo();
-		} catch (e) {
-			toast.error(
-				e instanceof Error
-					? e.message
-					: "Failed to load system information",
-			);
-		} finally {
-			systemInfoLoading = false;
-		}
-	}
-
-	function showPasswordModal() {
-		passwordModalOpen = true;
-	}
-
-	function handlePasswordSuccess() {
-		toast.success("Password changed successfully!");
-	}
-
-	// Endpoint editing
-	function startEditEndpoint() {
-		endpointValue = settings?.public_endpoint || "";
-		originalEndpointValue = endpointValue;
-		endpointError = "";
-		editingEndpoint = true;
-	}
-
-	function cancelEditEndpoint() {
-		endpointValue = originalEndpointValue;
-		editingEndpoint = false;
-		endpointError = "";
-	}
-
-	async function saveEndpoint() {
-		endpointError = "";
-
-		// Validate endpoint format - should NOT include port
-		if (endpointValue && endpointValue.includes(":")) {
-			endpointError =
-				"Public endpoint should not include port. Port is set per-interface.";
-			return;
-		}
-
-		try {
-			saving = true;
-			const updated = await api.updateSettings({
-				public_endpoint: endpointValue,
-			});
-			settings = updated;
-			originalEndpointValue = endpointValue;
-			editingEndpoint = false;
-			toast.success("Endpoint updated successfully");
-		} catch (e) {
-			endpointError =
-				e instanceof Error ? e.message : "Failed to update endpoint";
+			const s = await api.settings.update(body);
+			server = s;
+			settingsStore.set(s);
+			fill(s);
+			toast.success(`${label} saved`);
+		} catch (err) {
+			formError = toApiError(err).detail;
 		} finally {
 			saving = false;
 		}
 	}
 
-	// DNS editing
-	function startEditDns() {
-		dnsValue = settings?.wg_default_dns || "";
-		originalDnsValue = dnsValue;
-		dnsError = "";
-		editingDns = true;
+	function saveGeneral() {
+		if (Object.values(generalErrors).some(Boolean)) return;
+		void save(
+			{
+				public_endpoint: endpoint.trim(),
+				default_dns: joinList(splitList(dns)),
+				default_mtu: mtu.trim() ? Number(mtu) : null,
+				default_keepalive: Number(keepalive),
+				default_client_allowed_ips: joinList(splitList(clientRoutes))
+			},
+			'General settings'
+		);
 	}
-
-	function cancelEditDns() {
-		dnsValue = originalDnsValue;
-		editingDns = false;
-		dnsError = "";
-	}
-
-	async function saveDns() {
-		dnsError = "";
-
-		// Validate DNS format (basic IP validation)
-		if (dnsValue) {
-			const servers = dnsValue.split(",").map((s) => s.trim());
-			for (const server of servers) {
-				const parts = server.split(".");
-				if (parts.length !== 4) {
-					dnsError = "Invalid DNS format. Expected IPv4 address(es)";
-					return;
-				}
-				for (const part of parts) {
-					const num = parseInt(part);
-					if (isNaN(num) || num < 0 || num > 255) {
-						dnsError = "Invalid DNS format. Octets must be 0-255";
-						return;
-					}
-				}
-			}
-		}
-
-		try {
-			saving = true;
-			const updated = await api.updateSettings({
-				wg_default_dns: dnsValue,
-			});
-			settings = updated;
-			originalDnsValue = dnsValue;
-			editingDns = false;
-			toast.success("DNS updated successfully");
-		} catch (e) {
-			dnsError = e instanceof Error ? e.message : "Failed to update DNS";
-		} finally {
-			saving = false;
-		}
-	}
-
-	// Unsaved changes handlers
-	function handleDiscardChanges() {
-		if (editingEndpoint) {
-			cancelEditEndpoint();
-		}
-		if (editingDns) {
-			cancelEditDns();
-		}
-		unsavedChangesModalOpen = false;
-		if (pendingNavigation) {
-			pendingNavigation();
-			pendingNavigation = null;
-		}
-	}
-
-	function handleCancelNavigation() {
-		unsavedChangesModalOpen = false;
-		pendingNavigation = null;
-	}
-
-	// Theme handling
-	function selectTheme(newTheme: Theme) {
-		theme.set(newTheme);
-		toast.success(
-			`Theme changed to ${newTheme === "auto" ? "system default" : newTheme}`,
+	function saveData() {
+		if (Object.values(dataErrors).some(Boolean)) return;
+		void save(
+			{
+				audit_retention_days: Number(auditRetention),
+				stats_retention_days: Number(statsRetention),
+				ui_refresh_seconds: Number(uiRefresh)
+			},
+			'Data settings'
 		);
 	}
 
-	// Privacy & Data section state
-	let autoRefreshInterval = $state(10);
-	let timezone = $state("UTC");
-	let editingTimezone = $state(false);
-	let savingTimezone = $state(false);
-	let timezoneValue = $state("UTC");
-	let originalTimezoneValue = $state("UTC");
+	// ---- data actions -----------------------------------------------------
+	let exporting = $state(false);
+	let backingUp = $state(false);
+	async function exportJson() {
+		exporting = true;
+		try {
+			await api.system.downloadExport();
+			toast.success('Export downloaded');
+		} catch (err) {
+			toast.error('Export failed', { description: toApiError(err).detail });
+		} finally {
+			exporting = false;
+		}
+	}
+	async function backup() {
+		backingUp = true;
+		try {
+			await api.system.downloadBackup();
+			toast.success('Backup downloaded');
+		} catch (err) {
+			toast.error('Backup failed', { description: toApiError(err).detail });
+		} finally {
+			backingUp = false;
+		}
+	}
 
-	let retentionEnabled = $state(false);
-	let retentionDays = $state(90);
-	let editingRetention = $state(false);
-	let savingRetention = $state(false);
-	let retentionEnabledValue = $state(false);
-	let retentionDaysValue = $state(90);
-	let originalRetentionEnabled = $state(false);
-	let originalRetentionDays = $state(90);
+	// ---- about ------------------------------------------------------------
+	let info = $state<SystemInfo | null>(null);
+	let infoError = $state<string | null>(null);
+	async function loadInfo() {
+		infoError = null;
+		try {
+			info = await api.system.info();
+		} catch (err) {
+			infoError = toApiError(err).detail;
+		}
+	}
+	$effect(() => {
+		if (tab === 'about' && !info) void loadInfo();
+	});
 
-	let exportingData = $state(false);
-
-	const timezones = [
-		"UTC",
-		"America/New_York",
-		"America/Los_Angeles",
-		"America/Chicago",
-		"America/Denver",
-		"Europe/London",
-		"Europe/Paris",
-		"Europe/Berlin",
-		"Asia/Tokyo",
-		"Asia/Shanghai",
-		"Australia/Sydney",
+	// ---- appearance -------------------------------------------------------
+	const THEMES: { value: Theme; label: string }[] = [
+		{ value: 'light', label: 'Light' },
+		{ value: 'dark', label: 'Dark' },
+		{ value: 'system', label: 'System' }
 	];
-
-	onMount(async () => {
-		// Load auto-refresh from localStorage
-		const savedInterval = localStorage.getItem("autoRefreshInterval");
-		if (savedInterval) {
-			autoRefreshInterval = parseInt(savedInterval);
-		}
-
-		// Load timezone and retention settings
-		await loadPrivacySettings();
-	});
-
-	async function loadPrivacySettings() {
-		try {
-			const [timezoneRes, retentionRes] = await Promise.all([
-				api.getTimezone(),
-				api.getRetentionSettings(),
-			]);
-
-			timezone = timezoneRes.timezone;
-			timezoneValue = timezoneRes.timezone;
-			originalTimezoneValue = timezoneRes.timezone;
-
-			retentionEnabled = retentionRes.enabled;
-			retentionDays = retentionRes.logs_retention_days;
-			retentionEnabledValue = retentionRes.enabled;
-			retentionDaysValue = retentionRes.logs_retention_days;
-			originalRetentionEnabled = retentionRes.enabled;
-			originalRetentionDays = retentionRes.logs_retention_days;
-		} catch (e) {
-			console.error("Failed to load privacy settings:", e);
-		}
-	}
-
-	function handleAutoRefreshChange(event: Event) {
-		const target = event.target as HTMLSelectElement;
-		autoRefreshInterval = parseInt(target.value);
-		localStorage.setItem("autoRefreshInterval", target.value);
-
-		console.log(
-			"[Settings] Auto-refresh interval changed to:",
-			target.value,
-		);
-
-		// Dispatch custom event to notify dashboard
-		window.dispatchEvent(
-			new CustomEvent("autoRefreshIntervalChanged", {
-				detail: { interval: parseInt(target.value) },
-			}),
-		);
-
-		toast.success("Auto-refresh interval updated");
-	}
-
-	// Timezone editing
-	function startEditTimezone() {
-		timezoneValue = timezone;
-		originalTimezoneValue = timezone;
-		editingTimezone = true;
-	}
-
-	function cancelEditTimezone() {
-		timezoneValue = originalTimezoneValue;
-		editingTimezone = false;
-	}
-
-	async function saveTimezone() {
-		try {
-			savingTimezone = true;
-			const updated = await api.updateTimezone(timezoneValue);
-			timezone = updated.timezone;
-			originalTimezoneValue = updated.timezone;
-			editingTimezone = false;
-			toast.success("Timezone preference updated");
-		} catch (e) {
-			toast.error(
-				e instanceof Error ? e.message : "Failed to update timezone",
-			);
-		} finally {
-			savingTimezone = false;
-		}
-	}
-
-	// Retention editing
-	function startEditRetention() {
-		retentionEnabledValue = retentionEnabled;
-		retentionDaysValue = retentionDays;
-		originalRetentionEnabled = retentionEnabled;
-		originalRetentionDays = retentionDays;
-		editingRetention = true;
-	}
-
-	function cancelEditRetention() {
-		retentionEnabledValue = originalRetentionEnabled;
-		retentionDaysValue = originalRetentionDays;
-		editingRetention = false;
-	}
-
-	async function saveRetention() {
-		try {
-			savingRetention = true;
-			const updated = await api.updateRetentionSettings({
-				enabled: retentionEnabledValue,
-				logs_retention_days: retentionDaysValue,
-			});
-			retentionEnabled = updated.enabled;
-			retentionDays = updated.logs_retention_days;
-			originalRetentionEnabled = updated.enabled;
-			originalRetentionDays = updated.logs_retention_days;
-			editingRetention = false;
-			toast.success("Data retention settings updated");
-		} catch (e) {
-			toast.error(
-				e instanceof Error
-					? e.message
-					: "Failed to update retention settings",
-			);
-		} finally {
-			savingRetention = false;
-		}
-	}
-
-	async function exportData() {
-		try {
-			exportingData = true;
-			const blob = await api.exportAllData();
-
-			// Create download link
-			const url = URL.createObjectURL(blob);
-			const a = document.createElement("a");
-			a.href = url;
-			const timestamp = new Date()
-				.toISOString()
-				.replace(/[:.]/g, "-")
-				.split("T")[0];
-			a.download = `tunnbox_export_${timestamp}.json`;
-			document.body.appendChild(a);
-			a.click();
-			document.body.removeChild(a);
-			URL.revokeObjectURL(url);
-
-			toast.success("Data exported successfully");
-		} catch (e) {
-			toast.error(
-				e instanceof Error ? e.message : "Failed to export data",
-			);
-		} finally {
-			exportingData = false;
-		}
+	const DENSITIES: { value: Density; label: string }[] = [
+		{ value: 'comfortable', label: 'Comfortable' },
+		{ value: 'compact', label: 'Compact' }
+	];
+	let refreshOverride = $state(settingsStore.prefs.refreshSeconds !== null);
+	let refreshSeconds = $state(
+		String(settingsStore.prefs.refreshSeconds ?? settingsStore.server?.ui_refresh_seconds ?? 10)
+	);
+	function applyRefreshPref() {
+		const n = Number(refreshSeconds);
+		settingsStore.setPrefs({ refreshSeconds: refreshOverride && Number.isFinite(n) && n >= 3 ? n : null });
 	}
 </script>
 
 <svelte:head>
-	<title>Settings - Tunnbox</title>
+	<title>Settings · TunnBox</title>
 </svelte:head>
 
-<PasswordChangeModal
-	bind:open={passwordModalOpen}
-	onClose={() => (passwordModalOpen = false)}
-	onSuccess={handlePasswordSuccess}
-/>
+<PageHeader title="Settings">
+	<Tabs {tabs} value={tab} onchange={selectTab} label="Settings sections" idPrefix="settings" />
+</PageHeader>
 
-<ConfirmationModal
-	open={unsavedChangesModalOpen}
-	title="Unsaved Changes"
-	message="You have unsaved changes. Are you sure you want to leave? Your changes will be lost."
-	confirmText="Discard Changes"
-	cancelText="Stay on Page"
-	variant="warning"
-	icon={AlertTriangle}
-	onConfirm={handleDiscardChanges}
-	onCancel={handleCancelNavigation}
-/>
-
-<div class="max-w-3xl mx-auto">
-	<div class="mb-8">
-		<h1 class="text-2xl font-bold text-slate-900 dark:text-white">
-			Settings
-		</h1>
-		<p class="text-slate-600 dark:text-slate-400 mt-1">
-			Manage your Tunnbox configuration
-		</p>
-	</div>
-
-	<div class="space-y-6">
-		<!-- Account Settings -->
-		<CollapsibleSection
-			id="account"
-			title="Account"
-			icon={Shield}
-			iconColor="bg-emerald-600/10 text-emerald-500"
-		>
-			<div class="space-y-4">
-				<div
-					class="flex items-center justify-between py-3 border-b border-slate-200 dark:border-slate-700/50"
+<div class="flex flex-col gap-6">
+	{#if tab === 'general'}
+		<div id="settings-panel-general" role="tabpanel" aria-labelledby="settings-general">
+			{#if loadError}
+				<ErrorState message={loadError} onretry={loadServer} />
+			{:else if !server}
+				<Card><Skeleton class="h-40 w-full" rounded="md" /></Card>
+			{:else}
+				<Card
+					title="Defaults for new peers and interfaces"
+					description={isAdmin
+						? 'These values pre-fill new interfaces and client configurations.'
+						: 'Only admins can change these.'}
 				>
-					<div>
-						<p
-							class="font-medium text-slate-800 dark:text-slate-200"
-						>
-							Username
-						</p>
-						<p class="text-sm text-slate-600 dark:text-slate-400">
-							{$user?.username}
-						</p>
-					</div>
-				</div>
-
-				<div
-					class="flex items-center justify-between py-3 border-b border-slate-200 dark:border-slate-700/50"
-				>
-					<div>
-						<p
-							class="font-medium text-slate-800 dark:text-slate-200"
-						>
-							Role
-						</p>
-						<p class="text-sm text-slate-600 dark:text-slate-400">
-							{$user?.is_admin ? "Administrator" : "User"}
-						</p>
-					</div>
-				</div>
-
-				<div class="flex items-center justify-between py-3">
-					<div>
-						<p
-							class="font-medium text-slate-800 dark:text-slate-200"
-						>
-							Password
-						</p>
-						<p class="text-sm text-slate-600 dark:text-slate-400">
-							Change your account password
-						</p>
-					</div>
-					<Button
-						variant="secondary"
-						size="sm"
-						onclick={showPasswordModal}>Change Password</Button
+					<form
+						class="flex flex-col gap-5"
+						onsubmit={(e) => {
+							e.preventDefault();
+							saveGeneral();
+						}}
 					>
-				</div>
-			</div>
-		</CollapsibleSection>
-
-		<!-- Server Settings -->
-		<CollapsibleSection
-			id="server"
-			title="Server"
-			icon={Server}
-			iconColor="bg-blue-600/10 text-blue-500"
-		>
-			<p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
-				These are defaults for newly created interfaces. You can
-				customize them per interface after creation.
-			</p>
-
-			{#if loading}
-				<div class="flex items-center justify-center py-8">
-					<div
-						class="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full"
-					></div>
-				</div>
-			{:else if settings}
-				<div class="space-y-4">
-					<!-- Public Endpoint -->
-					<div
-						class="py-3 border-b border-slate-200 dark:border-slate-700/50"
-					>
-						<div class="flex items-start justify-between gap-4">
-							<div class="flex-1">
-								<div class="flex items-center gap-2 mb-1">
-									<p
-										class="font-medium text-slate-800 dark:text-slate-200"
-									>
-										Public Endpoint
-									</p>
-									{#if editingEndpoint && endpointValue !== originalEndpointValue}
-										<span
-											class="px-2 py-0.5 text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded"
-										>
-											Modified
-										</span>
-									{/if}
-									<div class="group relative">
-										<HelpCircle
-											class="h-4 w-4 text-slate-500 cursor-help"
-										/>
-										<div
-											class="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-700 dark:text-slate-300 shadow-xl z-10"
-										>
-											Public hostname or IP address of
-											your WireGuard server (without
-											port). Each interface uses its
-											configured port automatically.
-											Example: vpn.example.com or
-											192.168.1.100
-										</div>
-									</div>
-								</div>
-								<p
-									class="text-sm text-slate-600 dark:text-slate-400"
-								>
-									Public-facing hostname or IP (port added per
-									interface)
-								</p>
-
-								{#if editingEndpoint}
-									<div class="mt-3">
-										<input
-											type="text"
-											bind:value={endpointValue}
-											placeholder="e.g., vpn.example.com"
-											class="w-full px-3 py-2 bg-white dark:bg-slate-900 border rounded-lg text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 font-mono text-sm {endpointValue !==
-											originalEndpointValue
-												? 'border-amber-500/50 focus:ring-amber-500 focus:border-amber-500'
-												: 'border-slate-300 dark:border-slate-700 focus:ring-blue-500 focus:border-transparent'}"
-										/>
-										{#if endpointError}
-											<p
-												class="mt-1 text-sm text-rose-400"
-											>
-												{endpointError}
-											</p>
-										{/if}
-									</div>
-								{:else}
-									<p
-										class="mt-2 text-sm text-slate-700 dark:text-slate-300 font-mono"
-									>
-										{settings.public_endpoint ||
-											"(not set)"}
-									</p>
-								{/if}
-							</div>
-
-							<div class="flex items-center gap-2">
-								{#if editingEndpoint}
-									<Button
-										variant="secondary"
-										size="sm"
-										onclick={cancelEditEndpoint}
-										disabled={saving}
-									>
-										<X class="h-4 w-4" />
-									</Button>
-									<Button
-										size="sm"
-										onclick={saveEndpoint}
-										loading={saving}
-									>
-										<Save class="h-4 w-4" />
-									</Button>
-								{:else}
-									<Button
-										variant="secondary"
-										size="sm"
-										onclick={startEditEndpoint}
-									>
-										<Edit class="h-4 w-4 mr-1" />
-										Edit
-									</Button>
-								{/if}
-							</div>
+						{#if formError}
+							<Alert tone="danger">{formError}</Alert>
+						{/if}
+						<div class="grid gap-4 md:grid-cols-2">
+							<Input
+								label="Public endpoint"
+								bind:value={endpoint}
+								mono
+								placeholder="vpn.example.com"
+								hint="Hostname or IP clients connect to (no port)."
+								disabled={!isAdmin}
+								error={generalErrors.endpoint}
+							/>
+							<Input
+								label="Default DNS"
+								bind:value={dns}
+								mono
+								hint="Comma-separated IPs."
+								disabled={!isAdmin}
+								error={generalErrors.dns}
+							/>
+							<Input
+								label="Default MTU"
+								bind:value={mtu}
+								type="number"
+								inputmode="numeric"
+								min="1280"
+								max="1500"
+								placeholder="Not set"
+								hint="1280–1500; empty = WireGuard default."
+								disabled={!isAdmin}
+								error={generalErrors.mtu}
+							/>
+							<Input
+								label="Default keepalive (s)"
+								bind:value={keepalive}
+								type="number"
+								inputmode="numeric"
+								min="0"
+								max="65535"
+								disabled={!isAdmin}
+								error={generalErrors.keepalive}
+							/>
 						</div>
-					</div>
-
-					<!-- Default DNS -->
-					<div
-						class="py-3 border-b border-slate-200 dark:border-slate-700/50"
-					>
-						<div class="flex items-start justify-between gap-4">
-							<div class="flex-1">
-								<div class="flex items-center gap-2 mb-1">
-									<p
-										class="font-medium text-slate-800 dark:text-slate-200"
-									>
-										Default DNS for New Interfaces
-									</p>
-									{#if editingDns && dnsValue !== originalDnsValue}
-										<span
-											class="px-2 py-0.5 text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded"
-										>
-											Modified
-										</span>
-									{/if}
-									<div class="group relative">
-										<HelpCircle
-											class="h-4 w-4 text-slate-500 cursor-help"
-										/>
-										<div
-											class="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-700 dark:text-slate-300 shadow-xl z-10"
-										>
-											Default DNS server for new
-											interfaces. Can be single IP or
-											comma-separated list (e.g., 1.1.1.1,
-											8.8.8.8). You can customize per
-											interface after creation.
-										</div>
-									</div>
-								</div>
-								<p
-									class="text-sm text-slate-600 dark:text-slate-400"
+						<Input
+							label="Default client routes (AllowedIPs)"
+							bind:value={clientRoutes}
+							mono
+							hint="What new peers route through the tunnel by default. 0.0.0.0/0, ::/0 = full tunnel."
+							disabled={!isAdmin}
+							error={generalErrors.clientRoutes}
+						/>
+						{#if isAdmin}
+							<div class="flex justify-end gap-2 border-t border-border pt-4">
+								<Button variant="ghost" onclick={() => server && fill(server)} disabled={saving}>Reset</Button
 								>
-									Default DNS server for client configurations
-								</p>
-
-								{#if editingDns}
-									<div class="mt-3">
-										<input
-											type="text"
-											bind:value={dnsValue}
-											placeholder="e.g., 1.1.1.1, 8.8.8.8"
-											class="w-full px-3 py-2 bg-white dark:bg-slate-900 border rounded-lg text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 font-mono text-sm {dnsValue !==
-											originalDnsValue
-												? 'border-amber-500/50 focus:ring-amber-500 focus:border-amber-500'
-												: 'border-slate-300 dark:border-slate-700 focus:ring-blue-500 focus:border-transparent'}"
-										/>
-										{#if dnsError}
-											<p
-												class="mt-1 text-sm text-rose-400"
-											>
-												{dnsError}
-											</p>
-										{/if}
-									</div>
-								{:else}
-									<p
-										class="mt-2 text-sm text-slate-700 dark:text-slate-300 font-mono"
-									>
-										{settings.wg_default_dns}
-									</p>
-								{/if}
+								<Button variant="primary" type="submit" loading={saving}>Save changes</Button>
 							</div>
-
-							<div class="flex items-center gap-2">
-								{#if editingDns}
-									<Button
-										variant="secondary"
-										size="sm"
-										onclick={cancelEditDns}
-										disabled={saving}
-									>
-										<X class="h-4 w-4" />
-									</Button>
-									<Button
-										size="sm"
-										onclick={saveDns}
-										loading={saving}
-									>
-										<Save class="h-4 w-4" />
-									</Button>
-								{:else}
-									<Button
-										variant="secondary"
-										size="sm"
-										onclick={startEditDns}
-									>
-										<Edit class="h-4 w-4 mr-1" />
-										Edit
-									</Button>
-								{/if}
-							</div>
-						</div>
-					</div>
-
-					<!-- Config Path (Read-only) -->
-					<div class="py-3">
-						<div class="flex items-start justify-between gap-4">
-							<div class="flex-1">
-								<div class="flex items-center gap-2 mb-1">
-									<p
-										class="font-medium text-slate-800 dark:text-slate-200"
-									>
-										Config Path
-									</p>
-									<div class="group relative">
-										<Info
-											class="h-4 w-4 text-slate-500 cursor-help"
-										/>
-										<div
-											class="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-700 dark:text-slate-300 shadow-xl z-10"
-										>
-											System-managed directory for
-											WireGuard configuration files. This
-											setting cannot be changed at
-											runtime.
-										</div>
-									</div>
-								</div>
-								<p
-									class="text-sm text-slate-600 dark:text-slate-400"
-								>
-									WireGuard configuration directory
-								</p>
-								<p
-									class="mt-2 text-sm text-slate-500 dark:text-slate-500 font-mono"
-								>
-									{settings.wg_config_path}
-								</p>
-							</div>
-							<span
-								class="text-xs text-slate-500 dark:text-slate-500 bg-slate-100 dark:bg-slate-900 px-2 py-1 rounded"
-							>
-								Read-only
-							</span>
-						</div>
-					</div>
-				</div>
+						{/if}
+					</form>
+				</Card>
 			{/if}
-		</CollapsibleSection>
-
-		<!-- Appearance -->
-		<CollapsibleSection
-			id="appearance"
-			title="Appearance"
-			icon={Palette}
-			iconColor="bg-violet-600/10 text-violet-500"
+		</div>
+	{:else if tab === 'security'}
+		<div
+			id="settings-panel-security"
+			role="tabpanel"
+			aria-labelledby="settings-security"
+			class="flex flex-col gap-6"
 		>
-			<div class="space-y-4">
-				<div>
-					<p
-						class="font-medium text-slate-800 dark:text-slate-200 mb-1"
-					>
-						Theme
-					</p>
-					<p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
-						Choose your preferred color scheme
-					</p>
-
-					<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-						<!-- Light Theme -->
-						<button
-							onclick={() => selectTheme("light")}
-							class="flex items-center gap-3 p-4 rounded-lg border-2 transition-all {$theme ===
-							'light'
-								? 'border-emerald-500 bg-emerald-500/10'
-								: 'border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 hover:border-slate-400 dark:hover:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800'}"
-						>
-							<div
-								class="flex items-center justify-center h-10 w-10 rounded-lg bg-slate-100 text-slate-900"
-							>
-								<Sun class="h-5 w-5" />
-							</div>
-							<div class="flex-1 text-left">
-								<p
-									class="font-medium text-slate-800 dark:text-slate-200"
-								>
-									Light
-								</p>
-								<p
-									class="text-xs text-slate-600 dark:text-slate-400"
-								>
-									Bright theme
-								</p>
-							</div>
-							{#if $theme === "light"}
-								<div
-									class="h-2 w-2 rounded-full bg-emerald-500"
-								></div>
-							{/if}
-						</button>
-
-						<!-- Dark Theme -->
-						<button
-							onclick={() => selectTheme("dark")}
-							class="flex items-center gap-3 p-4 rounded-lg border-2 transition-all {$theme ===
-							'dark'
-								? 'border-emerald-500 bg-emerald-500/10'
-								: 'border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 hover:border-slate-400 dark:hover:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800'}"
-						>
-							<div
-								class="flex items-center justify-center h-10 w-10 rounded-lg bg-slate-900 text-slate-100"
-							>
-								<Moon class="h-5 w-5" />
-							</div>
-							<div class="flex-1 text-left">
-								<p
-									class="font-medium text-slate-800 dark:text-slate-200"
-								>
-									Dark
-								</p>
-								<p
-									class="text-xs text-slate-600 dark:text-slate-400"
-								>
-									Easy on eyes
-								</p>
-							</div>
-							{#if $theme === "dark"}
-								<div
-									class="h-2 w-2 rounded-full bg-emerald-500"
-								></div>
-							{/if}
-						</button>
-
-						<!-- Auto Theme -->
-						<button
-							onclick={() => selectTheme("auto")}
-							class="flex items-center gap-3 p-4 rounded-lg border-2 transition-all {$theme ===
-							'auto'
-								? 'border-emerald-500 bg-emerald-500/10'
-								: 'border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 hover:border-slate-400 dark:hover:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800'}"
-						>
-							<div
-								class="flex items-center justify-center h-10 w-10 rounded-lg bg-gradient-to-br from-slate-100 to-slate-900 text-slate-100"
-							>
-								<Monitor class="h-5 w-5" />
-							</div>
-							<div class="flex-1 text-left">
-								<p
-									class="font-medium text-slate-800 dark:text-slate-200"
-								>
-									Auto
-								</p>
-								<p
-									class="text-xs text-slate-600 dark:text-slate-400"
-								>
-									System default
-								</p>
-							</div>
-							{#if $theme === "auto"}
-								<div
-									class="h-2 w-2 rounded-full bg-emerald-500"
-								></div>
-							{/if}
-						</button>
-					</div>
-				</div>
-			</div>
-		</CollapsibleSection>
-
-		<!-- Data & Privacy -->
-		<CollapsibleSection
-			id="privacy"
-			title="Data & Privacy"
-			icon={Shield}
-			iconColor="bg-green-600/10 text-green-500"
+			<PasswordChangeForm />
+			<MfaCard />
+			<SessionsList />
+		</div>
+	{:else if tab === 'api-keys'}
+		<div id="settings-panel-api-keys" role="tabpanel" aria-labelledby="settings-api-keys">
+			<ApiKeysPanel />
+		</div>
+	{:else if tab === 'users' && isAdmin}
+		<div id="settings-panel-users" role="tabpanel" aria-labelledby="settings-users">
+			<UsersPanel />
+		</div>
+	{:else if tab === 'data'}
+		<div
+			id="settings-panel-data"
+			role="tabpanel"
+			aria-labelledby="settings-data"
+			class="grid gap-6 lg:grid-cols-2"
 		>
-			<div class="space-y-6">
-				<!-- Auto-refresh Interval -->
-				<div
-					class="py-3 border-b border-slate-200 dark:border-slate-700/50"
+			{#if loadError}
+				<ErrorState message={loadError} onretry={loadServer} />
+			{:else if !server}
+				<Card><Skeleton class="h-40 w-full" rounded="md" /></Card>
+			{:else}
+				<Card
+					title="Retention and refresh"
+					description={isAdmin
+						? 'Old audit entries and traffic samples are pruned hourly.'
+						: 'Only admins can change these.'}
 				>
-					<div class="flex items-start justify-between gap-4">
-						<div class="flex-1">
-							<div class="flex items-center gap-2 mb-1">
-								<p
-									class="font-medium text-slate-800 dark:text-slate-200"
-								>
-									Auto-refresh Interval
-								</p>
-								<div class="group relative">
-									<HelpCircle
-										class="h-4 w-4 text-slate-500 cursor-help"
-									/>
-									<div
-										class="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-700 dark:text-slate-300 shadow-xl z-10"
-									>
-										How often the dashboard should
-										automatically refresh to show the latest
-										peer statistics. Set to "Off" to disable
-										automatic refreshing.
-									</div>
-								</div>
-							</div>
-							<p
-								class="text-sm text-slate-600 dark:text-slate-400"
-							>
-								Dashboard refresh frequency
-							</p>
-
-							<div class="mt-3">
-								<select
-									bind:value={autoRefreshInterval}
-									onchange={handleAutoRefreshChange}
-									class="px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-								>
-									<option value={0}>Off</option>
-									<option value={5}>5 seconds</option>
-									<option value={10}>10 seconds</option>
-									<option value={30}>30 seconds</option>
-									<option value={60}>60 seconds</option>
-								</select>
-							</div>
-						</div>
-					</div>
-				</div>
-
-				<!-- Timezone Preference -->
-				<div
-					class="py-3 border-b border-slate-200 dark:border-slate-700/50"
-				>
-					<div class="flex items-start justify-between gap-4">
-						<div class="flex-1">
-							<div class="flex items-center gap-2 mb-1">
-								<p
-									class="font-medium text-slate-800 dark:text-slate-200"
-								>
-									Timezone Preference
-								</p>
-								{#if editingTimezone && timezoneValue !== originalTimezoneValue}
-									<span
-										class="px-2 py-0.5 text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded"
-									>
-										Modified
-									</span>
-								{/if}
-								<div class="group relative">
-									<HelpCircle
-										class="h-4 w-4 text-slate-500 cursor-help"
-									/>
-									<div
-										class="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-700 dark:text-slate-300 shadow-xl z-10"
-									>
-										Your preferred timezone for displaying
-										timestamps. Note: Timezone formatting is
-										not yet implemented, but your preference
-										will be saved.
-									</div>
-								</div>
-							</div>
-							<p
-								class="text-sm text-slate-600 dark:text-slate-400"
-							>
-								Display timezone for timestamps
-							</p>
-
-							{#if editingTimezone}
-								<div class="mt-3 space-y-2">
-									<select
-										bind:value={timezoneValue}
-										class="w-full px-3 py-2 bg-white dark:bg-slate-900 border rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 {timezoneValue !==
-										originalTimezoneValue
-											? 'border-amber-500/50 focus:ring-amber-500 focus:border-amber-500'
-											: 'border-slate-300 dark:border-slate-700 focus:ring-blue-500 focus:border-transparent'}"
-									>
-										{#each timezones as tz}
-											<option value={tz}>{tz}</option>
-										{/each}
-									</select>
-									<p
-										class="text-xs text-slate-500 dark:text-slate-500 italic"
-									>
-										Note: Timezone formatting not yet
-										implemented
-									</p>
-								</div>
-							{:else}
-								<div class="mt-2 space-y-1">
-									<p
-										class="text-sm text-slate-700 dark:text-slate-300 font-mono"
-									>
-										{timezone}
-									</p>
-									<p
-										class="text-xs text-slate-500 dark:text-slate-500 italic"
-									>
-										Note: Timezone formatting not yet
-										implemented
-									</p>
-								</div>
-							{/if}
-						</div>
-
-						<div class="flex items-center gap-2">
-							{#if editingTimezone}
-								<Button
-									variant="secondary"
-									size="sm"
-									onclick={cancelEditTimezone}
-									disabled={savingTimezone}
-								>
-									<X class="h-4 w-4" />
-								</Button>
-								<Button
-									size="sm"
-									onclick={saveTimezone}
-									loading={savingTimezone}
-								>
-									<Save class="h-4 w-4" />
-								</Button>
-							{:else}
-								<Button
-									variant="secondary"
-									size="sm"
-									onclick={startEditTimezone}
-								>
-									<Edit class="h-4 w-4 mr-1" />
-									Edit
-								</Button>
-							{/if}
-						</div>
-					</div>
-				</div>
-
-				<!-- Data Retention Policy -->
-				<div
-					class="py-3 border-b border-slate-200 dark:border-slate-700/50"
-				>
-					<div class="flex items-start justify-between gap-4">
-						<div class="flex-1">
-							<div class="flex items-center gap-2 mb-1">
-								<p
-									class="font-medium text-slate-800 dark:text-slate-200"
-								>
-									Data Retention Policy
-								</p>
-								{#if editingRetention && (retentionEnabledValue !== originalRetentionEnabled || retentionDaysValue !== originalRetentionDays)}
-									<span
-										class="px-2 py-0.5 text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded"
-									>
-										Modified
-									</span>
-								{/if}
-								<div class="group relative">
-									<HelpCircle
-										class="h-4 w-4 text-slate-500 cursor-help"
-									/>
-									<div
-										class="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-700 dark:text-slate-300 shadow-xl z-10"
-									>
-										Configure how long audit logs should be
-										retained. Note: Automatic cleanup is not
-										yet implemented, but your retention
-										policy will be saved.
-									</div>
-								</div>
-							</div>
-							<p
-								class="text-sm text-slate-600 dark:text-slate-400"
-							>
-								Audit log retention settings
-							</p>
-
-							{#if editingRetention}
-								<div class="mt-3 space-y-3">
-									<label class="flex items-center gap-3">
-										<input
-											type="checkbox"
-											bind:checked={retentionEnabledValue}
-											class="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-emerald-500 focus:ring-2 focus:ring-emerald-500 focus:ring-offset-0"
-										/>
-										<span
-											class="text-sm text-slate-700 dark:text-slate-300"
-											>Enable data retention policy</span
-										>
-									</label>
-
-									{#if retentionEnabledValue}
-										<div class="flex items-center gap-3">
-											<label
-												class="text-sm text-slate-700 dark:text-slate-300"
-												>Retain logs for:</label
-											>
-											<input
-												type="number"
-												bind:value={retentionDaysValue}
-												min="1"
-												max="365"
-												class="w-24 px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-											/>
-											<span
-												class="text-sm text-slate-600 dark:text-slate-400"
-												>days</span
-											>
-										</div>
-									{/if}
-
-									<p
-										class="text-xs text-slate-500 dark:text-slate-500 italic"
-									>
-										Note: Automatic cleanup not yet
-										implemented
-									</p>
-								</div>
-							{:else}
-								<div class="mt-2 space-y-1">
-									<p
-										class="text-sm text-slate-700 dark:text-slate-300"
-									>
-										{retentionEnabled
-											? `Enabled - ${retentionDays} days`
-											: "Disabled"}
-									</p>
-									<p
-										class="text-xs text-slate-500 dark:text-slate-500 italic"
-									>
-										Note: Automatic cleanup not yet
-										implemented
-									</p>
-								</div>
-							{/if}
-						</div>
-
-						<div class="flex items-center gap-2">
-							{#if editingRetention}
-								<Button
-									variant="secondary"
-									size="sm"
-									onclick={cancelEditRetention}
-									disabled={savingRetention}
-								>
-									<X class="h-4 w-4" />
-								</Button>
-								<Button
-									size="sm"
-									onclick={saveRetention}
-									loading={savingRetention}
-								>
-									<Save class="h-4 w-4" />
-								</Button>
-							{:else}
-								<Button
-									variant="secondary"
-									size="sm"
-									onclick={startEditRetention}
-								>
-									<Edit class="h-4 w-4 mr-1" />
-									Edit
-								</Button>
-							{/if}
-						</div>
-					</div>
-				</div>
-
-				<!-- Export Data -->
-				<div class="py-3">
-					<div class="flex items-start justify-between gap-4">
-						<div class="flex-1">
-							<div class="flex items-center gap-2 mb-1">
-								<p
-									class="font-medium text-slate-800 dark:text-slate-200"
-								>
-									Export All Data
-								</p>
-								<div class="group relative">
-									<HelpCircle
-										class="h-4 w-4 text-slate-500 cursor-help"
-									/>
-									<div
-										class="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-700 dark:text-slate-300 shadow-xl z-10"
-									>
-										Download all non-sensitive data
-										including users, peer metadata, audit
-										logs, and settings. Sensitive data like
-										passwords and private keys are excluded
-										for security.
-									</div>
-								</div>
-							</div>
-							<p
-								class="text-sm text-slate-600 dark:text-slate-400"
-							>
-								Download all non-sensitive data as JSON
-							</p>
-						</div>
-
-						<Button
-							variant="secondary"
-							size="sm"
-							onclick={exportData}
-							loading={exportingData}
-						>
-							<Download class="h-4 w-4 mr-1" />
-							Export Data
-						</Button>
-					</div>
-				</div>
-			</div>
-		</CollapsibleSection>
-
-		<!-- About -->
-		<CollapsibleSection
-			id="about"
-			title="About"
-			icon={Key}
-			iconColor="bg-purple-600/10 text-purple-500"
-			defaultExpanded={false}
-		>
-			{#if systemInfoLoading}
-				<div class="flex items-center justify-center py-8">
-					<div
-						class="animate-spin h-8 w-8 border-4 border-purple-500 border-t-transparent rounded-full"
-					></div>
-				</div>
-			{:else if systemInfo}
-				<div class="space-y-6">
-					<!-- Description -->
-					<div
-						class="pb-4 border-b border-slate-200 dark:border-slate-700/50"
+					<form
+						class="flex flex-col gap-4"
+						onsubmit={(e) => {
+							e.preventDefault();
+							saveData();
+						}}
 					>
-						<p
-							class="text-sm text-slate-600 dark:text-slate-400 leading-relaxed"
-						>
-							A modern web interface for managing WireGuard VPN
-							servers. Built with FastAPI and SvelteKit.
-						</p>
-					</div>
-
-					<!-- Version Information -->
-					<div>
-						<h3
-							class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3"
-						>
-							Version Information
-						</h3>
-						<div class="space-y-2">
-							<div class="flex items-center justify-between py-2">
-								<span
-									class="text-sm text-slate-600 dark:text-slate-400"
-									>Frontend</span
-								>
-								<span
-									class="text-sm text-slate-800 dark:text-slate-200 font-mono"
-									>{systemInfo.frontend_version}</span
-								>
+						{#if formError}
+							<Alert tone="danger">{formError}</Alert>
+						{/if}
+						<Input
+							label="Audit log retention (days)"
+							bind:value={auditRetention}
+							type="number"
+							inputmode="numeric"
+							min="1"
+							disabled={!isAdmin}
+							error={dataErrors.auditRetention}
+						/>
+						<Input
+							label="Traffic stats retention (days)"
+							bind:value={statsRetention}
+							type="number"
+							inputmode="numeric"
+							min="1"
+							disabled={!isAdmin}
+							error={dataErrors.statsRetention}
+						/>
+						<Input
+							label="UI refresh interval (seconds)"
+							bind:value={uiRefresh}
+							type="number"
+							inputmode="numeric"
+							min="3"
+							max="300"
+							hint="Default polling interval for dashboards and lists."
+							disabled={!isAdmin}
+							error={dataErrors.uiRefresh}
+						/>
+						{#if isAdmin}
+							<div class="flex justify-end gap-2 border-t border-border pt-4">
+								<Button variant="primary" type="submit" loading={saving}>Save changes</Button>
 							</div>
-							<div class="flex items-center justify-between py-2">
-								<span
-									class="text-sm text-slate-600 dark:text-slate-400"
-									>Backend</span
-								>
-								<span
-									class="text-sm text-slate-800 dark:text-slate-200 font-mono"
-									>{systemInfo.backend_version}</span
-								>
-							</div>
-							{#if systemInfo.wireguard_version}
-								<div
-									class="flex items-center justify-between py-2"
-								>
-									<span
-										class="text-sm text-slate-600 dark:text-slate-400"
-										>WireGuard</span
-									>
-									<span
-										class="text-sm text-slate-800 dark:text-slate-200 font-mono"
-										>{systemInfo.wireguard_version}</span
-									>
-								</div>
-							{/if}
-							{#if systemInfo.docker_version}
-								<div
-									class="flex items-center justify-between py-2"
-								>
-									<span
-										class="text-sm text-slate-600 dark:text-slate-400"
-										>Docker</span
-									>
-									<span
-										class="text-sm text-slate-800 dark:text-slate-200 font-mono"
-										>{systemInfo.docker_version}</span
-									>
-								</div>
-							{/if}
-						</div>
-					</div>
-
-					<!-- System Information -->
-					<div
-						class="pt-4 border-t border-slate-200 dark:border-slate-700/50"
-					>
-						<h3
-							class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3"
-						>
-							System Information
-						</h3>
-						<div class="space-y-2">
-							<div class="flex items-center justify-between py-2">
-								<span
-									class="text-sm text-slate-600 dark:text-slate-400"
-									>Operating System</span
-								>
-								<span
-									class="text-sm text-slate-800 dark:text-slate-200"
-									>{systemInfo.os_name}
-									{systemInfo.os_version}</span
-								>
-							</div>
-							<div class="flex items-center justify-between py-2">
-								<span
-									class="text-sm text-slate-600 dark:text-slate-400"
-									>Python Version</span
-								>
-								<span
-									class="text-sm text-slate-800 dark:text-slate-200 font-mono"
-									>{systemInfo.python_version}</span
-								>
-							</div>
-							<div class="flex items-center justify-between py-2">
-								<span
-									class="text-sm text-slate-600 dark:text-slate-400"
-									>Database</span
-								>
-								<span
-									class="text-sm text-slate-800 dark:text-slate-200"
-									>{systemInfo.database_type}</span
-								>
-							</div>
-						</div>
-					</div>
-
-					<!-- Links -->
-					<div
-						class="pt-4 border-t border-slate-200 dark:border-slate-700/50"
-					>
-						<h3
-							class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3"
-						>
-							Resources
-						</h3>
-						<div class="space-y-2">
-							<a
-								href={systemInfo.github_url}
-								target="_blank"
-								rel="noopener noreferrer"
-								class="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700/30 transition-colors group"
-							>
-								<span
-									class="text-sm text-slate-600 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200"
-									>GitHub Repository</span
-								>
-								<ExternalLink
-									class="h-4 w-4 text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300"
-								/>
-							</a>
-							<a
-								href={systemInfo.documentation_url}
-								target="_blank"
-								rel="noopener noreferrer"
-								class="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700/30 transition-colors group"
-							>
-								<span
-									class="text-sm text-slate-600 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200"
-									>Documentation</span
-								>
-								<ExternalLink
-									class="h-4 w-4 text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300"
-								/>
-							</a>
-						</div>
-					</div>
-
-					<!-- License -->
-					<div
-						class="pt-4 border-t border-slate-200 dark:border-slate-700/50"
-					>
-						<div class="flex items-center justify-between">
-							<span
-								class="text-sm text-slate-600 dark:text-slate-400"
-								>License</span
-							>
-							<span
-								class="text-sm text-slate-800 dark:text-slate-200"
-								>{systemInfo.license}</span
-							>
-						</div>
-					</div>
-				</div>
+						{/if}
+					</form>
+				</Card>
 			{/if}
-		</CollapsibleSection>
-	</div>
+			{#if isAdmin}
+				<Card
+					title="Export and backup"
+					description="Move your configuration to another server or keep an offline copy."
+				>
+					<div class="flex flex-col gap-4">
+						<div
+							class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border p-3"
+						>
+							<div class="text-sm">
+								<p class="font-medium text-fg">Export JSON</p>
+								<p class="text-[13px] text-fg-subtle">
+									Users, interfaces, peers, settings and audit log — without any private keys.
+								</p>
+							</div>
+							<Button onclick={exportJson} loading={exporting}>
+								<Download class="h-4 w-4" aria-hidden="true" />
+								Export
+							</Button>
+						</div>
+						<div
+							class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning/40 bg-warning-soft/40 p-3"
+						>
+							<div class="text-sm">
+								<p class="font-medium text-fg">Download full backup</p>
+								<p class="text-[13px] text-fg-muted">
+									A tar.gz of the database and rendered configs. <strong>It contains private keys</strong> — store
+									it encrypted.
+								</p>
+							</div>
+							<Button onclick={backup} loading={backingUp}>
+								<Download class="h-4 w-4" aria-hidden="true" />
+								Backup
+							</Button>
+						</div>
+					</div>
+				</Card>
+			{/if}
+		</div>
+	{:else if tab === 'appearance'}
+		<div
+			id="settings-panel-appearance"
+			role="tabpanel"
+			aria-labelledby="settings-appearance"
+			class="grid gap-6 lg:grid-cols-2"
+		>
+			<Card title="Theme" description="Stored on this device.">
+				<div class="flex flex-col gap-5">
+					<SegmentedControl
+						value={themeStore.theme}
+						options={THEMES}
+						label="Theme"
+						size="md"
+						onchange={(v) => themeStore.set(v)}
+					/>
+					<div>
+						<p class="mb-2 text-sm font-medium text-fg">Density</p>
+						<SegmentedControl
+							value={settingsStore.prefs.density}
+							options={DENSITIES}
+							label="Density"
+							size="md"
+							onchange={(v) => settingsStore.setPrefs({ density: v })}
+						/>
+					</div>
+					<Switch
+						checked={settingsStore.prefs.sidebarCollapsed}
+						label="Collapse sidebar to icons"
+						onchange={(v) => settingsStore.setPrefs({ sidebarCollapsed: v })}
+					/>
+				</div>
+			</Card>
+			<Card title="Live refresh" description="Override the server-wide refresh interval on this device.">
+				<div class="flex flex-col gap-4">
+					<Switch
+						bind:checked={refreshOverride}
+						label="Use a custom interval"
+						description={`Server default: ${settingsStore.server?.ui_refresh_seconds ?? 10}s`}
+						onchange={applyRefreshPref}
+					/>
+					<Input
+						label="Interval (seconds)"
+						bind:value={refreshSeconds}
+						type="number"
+						inputmode="numeric"
+						min="3"
+						max="300"
+						disabled={!refreshOverride}
+						oninput={applyRefreshPref}
+						class="max-w-xs"
+					/>
+				</div>
+			</Card>
+		</div>
+	{:else if tab === 'about'}
+		<div
+			id="settings-panel-about"
+			role="tabpanel"
+			aria-labelledby="settings-about"
+			class="grid gap-6 lg:grid-cols-2"
+		>
+			<Card title="System">
+				{#if infoError}
+					<ErrorState compact message={infoError} onretry={loadInfo} />
+				{:else if !info}
+					<Skeleton class="h-40 w-full" rounded="md" />
+				{:else}
+					<dl class="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
+						<dt class="text-fg-subtle">Version</dt>
+						<dd class="text-fg">TunnBox {info.version}</dd>
+						<dt class="text-fg-subtle">Backend</dt>
+						<dd class="flex items-center gap-2 text-fg">
+							{info.backend_mode}
+							{#if info.backend_mode === 'mock'}<Badge tone="warning" size="sm">Simulated</Badge>{/if}
+						</dd>
+						<dt class="text-fg-subtle">WireGuard</dt>
+						<dd class="text-fg">
+							{info.wireguard_version ?? 'Not available'}{info.kernel_module ? ' · kernel module' : ''}
+						</dd>
+						<dt class="text-fg-subtle">Host</dt>
+						<dd class="font-mono text-[13px] text-fg">{info.hostname}</dd>
+						<dt class="text-fg-subtle">OS</dt>
+						<dd class="text-fg">{info.os}</dd>
+						<dt class="text-fg-subtle">Python</dt>
+						<dd class="text-fg">{info.python_version}</dd>
+						<dt class="text-fg-subtle">Uptime</dt>
+						<dd class="text-fg">{formatDuration(info.uptime_seconds)}</dd>
+						<dt class="text-fg-subtle">Database</dt>
+						<dd class="text-fg">{formatBytes(info.database_size_bytes)}</dd>
+						<dt class="text-fg-subtle">Config path</dt>
+						<dd class="font-mono text-[13px] text-fg">{info.config_path}</dd>
+					</dl>
+				{/if}
+			</Card>
+			<Card title="Resources">
+				<ul class="flex flex-col gap-2 text-sm">
+					<li>
+						<a
+							href="/api/docs"
+							target="_blank"
+							rel="noopener noreferrer"
+							class="inline-flex items-center gap-1.5 text-accent hover:underline"
+							>API documentation <ExternalLink class="h-3.5 w-3.5" aria-hidden="true" /></a
+						>
+					</li>
+					<li>
+						<a
+							href="https://github.com/pgorbunov/tunnbox"
+							target="_blank"
+							rel="noopener noreferrer"
+							class="inline-flex items-center gap-1.5 text-accent hover:underline"
+							>GitHub repository <ExternalLink class="h-3.5 w-3.5" aria-hidden="true" /></a
+						>
+					</li>
+					<li>
+						<a
+							href="https://github.com/pgorbunov/tunnbox/tree/main/docs"
+							target="_blank"
+							rel="noopener noreferrer"
+							class="inline-flex items-center gap-1.5 text-accent hover:underline"
+							>Documentation <ExternalLink class="h-3.5 w-3.5" aria-hidden="true" /></a
+						>
+					</li>
+				</ul>
+				<p class="mt-4 text-[13px] text-fg-subtle">
+					Press <kbd class="rounded-sm border border-border bg-bg-subtle px-1 font-sans text-[11px]">?</kbd> anywhere
+					for keyboard shortcuts.
+				</p>
+			</Card>
+		</div>
+	{/if}
 </div>
