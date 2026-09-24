@@ -132,17 +132,15 @@
 
 	const xTicks = $derived.by(() => {
 		if (!enough) return [] as { x: number; label: string }[];
-		const count = Math.max(2, Math.min(6, Math.floor(plotW / 110)));
-		const out: { x: number; label: string }[] = [];
+		const count = Math.max(2, Math.min(8, Math.floor(plotW / 110)));
 		const spanMs = xMax - xMin;
-		const multiDay = spanMs > 36 * 3600 * 1000;
+		const out: { x: number; label: string }[] = [];
 		for (let k = 0; k < count; k++) {
 			const t = xMin + (spanMs * k) / (count - 1);
-			const d = new Date(t);
-			const label = multiDay
-				? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
-					(spanMs < 8 * 86400000 ? ` ${formatTime(d)}` : '')
-				: formatTime(d);
+			const label = formatAxisTick(new Date(t), spanMs);
+			// Drop ticks whose formatted label repeats the previous one (short spans can
+			// otherwise render several ticks with identical hour:minute text).
+			if (out.length > 0 && out[out.length - 1].label === label) continue;
 			out.push({ x: M.left + (plotW * k) / (count - 1), label });
 		}
 		return out;
@@ -205,14 +203,14 @@
 	const last = $derived(points.length - 1);
 	const summary = $derived(
 		enough
-			? `${title}: ${points.length} points from ${formatDateTime(points[0].ts)} to ${formatDateTime(points[last].ts)}. Latest download ${fmt(rx[last])}, upload ${fmt(tx[last])}.`
+			? `${title}: ${points.length} points from ${formatTooltipTime(points[0].ts, xSpan)} to ${formatTooltipTime(points[last].ts, xSpan)}. Latest download ${fmt(rx[last])}, upload ${fmt(tx[last])}.`
 			: `${title}: no data`
 	);
 
 	const valueText = $derived.by(() => {
 		const i = active ?? last;
 		if (!enough || i < 0) return '';
-		return `${formatDateTime(points[i].ts)}: download ${fmt(rx[i])}, upload ${fmt(tx[i])}`;
+		return `${formatTooltipTime(points[i].ts, xSpan)}: download ${fmt(rx[i])}, upload ${fmt(tx[i])}`;
 	});
 
 	// Keep end labels from colliding: if too close, nudge apart.
@@ -449,7 +447,7 @@
 						style={`left:${tooltipLeft}px`}
 						role="status"
 					>
-						<p class="mb-1.5 text-fg-subtle">{formatDateTime(points[active].ts)}</p>
+						<p class="mb-1.5 text-fg-subtle">{formatTooltipTime(points[active].ts, xSpan)}</p>
 						<div class="flex items-center justify-between gap-2">
 							<span class="flex items-center gap-1.5 text-fg-muted"
 								><span class="inline-block h-0.5 w-3 bg-chart-download" aria-hidden="true"
