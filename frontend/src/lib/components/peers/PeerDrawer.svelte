@@ -82,7 +82,7 @@
 		<div class="flex flex-col gap-6">
 			<div class="flex flex-wrap items-center gap-2">
 				<PeerStatusBadge status={peer.status} />
-				{#if peer.has_private_key}
+				{#if canWrite && peer.has_private_key}
 					<Button size="sm" onclick={() => onaction('qr', peer)}>
 						<QrCode class="h-4 w-4" aria-hidden="true" />
 						QR code

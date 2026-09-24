@@ -29,13 +29,15 @@
 			label: 'Show QR code',
 			icon: QrCode,
 			onselect: () => onaction('qr', peer),
-			disabled: !peer.has_private_key
+			disabled: !peer.has_private_key,
+			hidden: !canWrite
 		},
 		{
 			label: 'Download config',
 			icon: Download,
 			onselect: () => onaction('download', peer),
-			disabled: !peer.has_private_key
+			disabled: !peer.has_private_key,
+			hidden: !canWrite
 		},
 		{ label: 'Share link', icon: Link2, onselect: () => onaction('share', peer), hidden: !canWrite },
 		{

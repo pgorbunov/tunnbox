@@ -152,6 +152,15 @@ export interface PasswordChangeRequest {
 
 // ---- MFA ---------------------------------------------------------------
 
+export interface MfaSetupRequest {
+	password: string;
+}
+
+export interface MfaEnableRequest {
+	code: string;
+	password: string;
+}
+
 export interface MfaSetupResponse {
 	secret: string;
 	otpauth_uri: string;

@@ -65,8 +65,8 @@ export const auth = {
 };
 
 export const mfa = {
-	setup: () => post<MfaSetupResponse>('/mfa/setup'),
-	enable: (code: string) => post<RecoveryCodesResponse>('/mfa/enable', { code }),
+	setup: (password: string) => post<MfaSetupResponse>('/mfa/setup', { password }),
+	enable: (code: string, password: string) => post<RecoveryCodesResponse>('/mfa/enable', { code, password }),
 	disable: (password: string, code: string) => post<void>('/mfa/disable', { password, code }),
 	regenerateRecoveryCodes: (password: string) =>
 		post<RecoveryCodesResponse>('/mfa/recovery-codes', { password })
