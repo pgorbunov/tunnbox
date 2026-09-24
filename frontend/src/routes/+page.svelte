@@ -198,7 +198,7 @@
 		</Card>
 	</div>
 
-	<div class="mt-6 grid gap-6 xl:grid-cols-3">
+	<div class="mt-6 grid items-start gap-6 xl:grid-cols-3">
 		<Card title="Interfaces" flush class="xl:col-span-2">
 			{#snippet actions()}
 				{#if canWrite}

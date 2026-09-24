@@ -76,9 +76,11 @@
 		}
 	}
 
-	function finish(target: string) {
+	async function finish(target: string) {
+		// Navigate first, then release the setup flag so the layout guard does not
+		// bounce us to the dashboard while /setup is still the current path.
+		await goto(target, { replaceState: true });
 		auth.finishSetupFlow();
-		void goto(target, { replaceState: true });
 	}
 </script>
 
@@ -198,11 +200,11 @@
 						Create your first WireGuard interface, then add peers and share their configs in one click.
 					</p>
 					<div class="mt-6 flex w-full flex-col gap-2">
-						<Button variant="primary" size="lg" block onclick={() => finish('/interfaces?new=1')}>
+						<Button variant="primary" size="lg" block onclick={() => void finish('/interfaces?new=1')}>
 							<Network class="h-4 w-4" aria-hidden="true" />
 							Create your first interface
 						</Button>
-						<Button variant="ghost" block onclick={() => finish('/')}>Go to dashboard</Button>
+						<Button variant="ghost" block onclick={() => void finish('/')}>Go to dashboard</Button>
 					</div>
 				</div>
 			{/if}

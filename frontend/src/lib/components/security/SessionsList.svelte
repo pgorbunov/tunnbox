@@ -42,14 +42,14 @@
 			/Edg\/(\d+)/.exec(ua)?.[0].replace('Edg', 'Edge') ??
 			/Chrome\/(\d+)/.exec(ua)?.[0] ??
 			(/Safari/.test(ua) ? 'Safari' : ua.slice(0, 40));
-		const os = /Windows/.test(ua)
-			? 'Windows'
-			: /Mac OS X/.test(ua)
-				? 'macOS'
-				: /Android/.test(ua)
-					? 'Android'
-					: /iPhone|iPad/.test(ua)
-						? 'iOS'
+		const os = /iPhone|iPad/.test(ua)
+			? 'iOS'
+			: /Android/.test(ua)
+				? 'Android'
+				: /Windows/.test(ua)
+					? 'Windows'
+					: /Mac OS X/.test(ua)
+						? 'macOS'
 						: /Linux/.test(ua)
 							? 'Linux'
 							: '';

@@ -6,7 +6,7 @@
 	import type { Snippet } from 'svelte';
 	import type { SvelteSet } from 'svelte/reactivity';
 	import type { Peer } from '$lib/api/types';
-	import { formatBytes, formatDateTime, formatRelative, stripPrefixes } from '$lib/utils/format';
+	import { formatBytes, formatDateTime, formatRelative, splitList, stripPrefixes } from '$lib/utils/format';
 	import { createTicker } from '$lib/utils/poll.svelte';
 	import PeerStatusBadge from '$lib/components/app/PeerStatusBadge.svelte';
 	import Table, { type Column } from '$lib/components/ui/Table.svelte';
@@ -51,11 +51,16 @@
 		{ key: 'name', label: 'Name', sortable: true },
 		{ key: 'address', label: 'Address' },
 		...(showInterface ? [{ key: 'interface', label: 'Interface', class: 'hidden xl:table-cell' }] : []),
-		{ key: 'endpoint', label: 'Endpoint', class: 'hidden xl:table-cell' },
-		{ key: 'handshake', label: 'Last handshake', sortable: true, class: 'hidden lg:table-cell' },
-		{ key: 'rx', label: 'Down', sortable: true, align: 'right', class: 'w-24' },
-		{ key: 'tx', label: 'Up', sortable: true, align: 'right', class: 'w-24' },
-		{ key: 'expires', label: 'Expires', class: 'hidden lg:table-cell' },
+		{ key: 'endpoint', label: 'Endpoint', class: 'hidden 2xl:table-cell' },
+		{
+			key: 'handshake',
+			label: 'Last handshake',
+			sortable: true,
+			class: 'hidden lg:table-cell whitespace-nowrap'
+		},
+		{ key: 'rx', label: 'Down', sortable: true, align: 'right', class: 'w-24 whitespace-nowrap' },
+		{ key: 'tx', label: 'Up', sortable: true, align: 'right', class: 'w-24 whitespace-nowrap' },
+		{ key: 'expires', label: 'Expires', class: 'hidden lg:table-cell whitespace-nowrap' },
 		{ key: 'actions', label: 'Actions', srOnly: true, align: 'right', class: 'w-12' }
 	]);
 </script>
@@ -87,7 +92,15 @@
 				>
 			{/if}
 		{:else if col.key === 'address'}
-			<span class="font-mono text-[13px] text-fg-muted">{stripPrefixes(peer.allowed_ips)}</span>
+			{@const addrs = splitList(peer.allowed_ips)}
+			<span
+				class="font-mono text-[13px] whitespace-nowrap text-fg-muted"
+				title={stripPrefixes(peer.allowed_ips)}
+			>
+				{stripPrefixes(addrs[0] ?? '')}{#if addrs.length > 1}<span class="text-fg-subtle"
+						>&nbsp;+{addrs.length - 1}</span
+					>{/if}
+			</span>
 		{:else if col.key === 'interface'}
 			<a
 				href={`/interfaces/${encodeURIComponent(peer.interface_name)}`}

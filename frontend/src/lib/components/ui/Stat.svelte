@@ -32,8 +32,8 @@
 	{href}
 	class={`flex min-w-0 flex-col gap-2 rounded-lg border border-border bg-surface p-4 shadow-sm ${href ? 'transition-colors hover:border-border-strong' : ''}`}
 >
-	<div class="flex items-center justify-between gap-2">
-		<span class="truncate text-[13px] font-medium text-fg-muted">{label}</span>
+	<div class="flex items-start justify-between gap-2">
+		<span class="text-[13px] leading-snug font-medium text-fg-muted">{label}</span>
 		{#if icon}
 			<span
 				class={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${ICON_TONE[tone]}`}

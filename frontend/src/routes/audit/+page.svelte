@@ -275,12 +275,15 @@
 					</p>
 					{#if e.target}<p class="mt-0.5 font-mono text-[12px] text-fg-muted">{e.target}</p>{/if}
 					{#if e.details && Object.keys(e.details).length}
-						<pre
-							class="mt-1.5 overflow-auto rounded-sm bg-bg-subtle p-2 font-mono text-[11px] break-all whitespace-pre-wrap text-fg-muted">{JSON.stringify(
-								e.details,
-								null,
-								2
-							)}</pre>
+						<details class="mt-1.5">
+							<summary class="cursor-pointer text-[12px] text-fg-subtle select-none">Details</summary>
+							<pre
+								class="mt-1 overflow-auto rounded-sm bg-bg-subtle p-2 font-mono text-[11px] break-all whitespace-pre-wrap text-fg-muted">{JSON.stringify(
+									e.details,
+									null,
+									2
+								)}</pre>
+						</details>
 					{/if}
 				</div>
 			{/snippet}

@@ -6,7 +6,14 @@
 	 * crosshair tooltip listing every series, keyboard navigation, table view.
 	 */
 	import { Table2, TrendingUp } from 'lucide-svelte';
-	import { formatBytes, formatDateTime, formatRate, formatTime, parseDate } from '$lib/utils/format';
+	import {
+		formatAxisTick,
+		formatBytes,
+		formatDateTime,
+		formatRate,
+		formatTooltipTime,
+		parseDate
+	} from '$lib/utils/format';
 	import { uid } from '$lib/utils/dom';
 	import IconButton from '$lib/components/ui/IconButton.svelte';
 	import Skeleton from '$lib/components/ui/Skeleton.svelte';

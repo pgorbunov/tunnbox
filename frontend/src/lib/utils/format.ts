@@ -81,6 +81,43 @@ export function formatTime(iso: string | Date | null | undefined): string {
 	return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
 
+const MINUTE_MS = 60_000;
+const HOUR_MS = 3_600_000;
+const DAY_MS = 86_400_000;
+
+/** Axis tick label chosen from the visible time span, so ticks never repeat unnecessarily. */
+export function formatAxisTick(d: Date, spanMs: number): string {
+	if (spanMs > 7 * DAY_MS) {
+		return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(d);
+	}
+	if (spanMs > 2 * DAY_MS) {
+		return new Intl.DateTimeFormat(undefined, {
+			month: 'short',
+			day: 'numeric',
+			hour: '2-digit',
+			minute: '2-digit'
+		}).format(d);
+	}
+	if (spanMs > 3 * HOUR_MS) {
+		return new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(d);
+	}
+	return new Intl.DateTimeFormat(undefined, {
+		hour: '2-digit',
+		minute: '2-digit',
+		second: spanMs < 10 * MINUTE_MS ? '2-digit' : undefined
+	}).format(d);
+}
+
+/** Full-precision timestamp for tooltips/crosshairs; adds seconds when the visible span is short. */
+export function formatTooltipTime(iso: string | Date | null | undefined, spanMs: number): string {
+	const d = iso instanceof Date ? iso : parseDate(iso);
+	if (!d) return '—';
+	return new Intl.DateTimeFormat(undefined, {
+		dateStyle: 'medium',
+		timeStyle: spanMs < 10 * MINUTE_MS ? 'medium' : 'short'
+	}).format(d);
+}
+
 /** "3d 4h", "12m 5s", "45s" */
 export function formatDuration(seconds: number): string {
 	if (!Number.isFinite(seconds) || seconds < 0) return '—';
