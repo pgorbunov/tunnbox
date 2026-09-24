@@ -25,6 +25,7 @@
 	let verifying = $state(false);
 	let codes = $state<string[] | null>(null);
 	let acknowledged = $state(false);
+	let lastAutoCode = '';
 
 	const qrSrc = $derived(setup ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(setup.qr_svg)}` : '');
 
@@ -60,11 +61,20 @@
 	}
 
 	$effect(() => {
-		if (isTotpCode(code) && !verifying && !codes) void verify();
+		const c = code.trim();
+		if (isTotpCode(c) && !codes && c !== lastAutoCode) {
+			lastAutoCode = c;
+			void verify();
+		}
 	});
 </script>
 
-<Dialog bind:open title={codes ? 'Save your recovery codes' : 'Set up two-factor authentication'} size="md" locked={verifying || (!!codes && !acknowledged)}>
+<Dialog
+	bind:open
+	title={codes ? 'Save your recovery codes' : 'Set up two-factor authentication'}
+	size="md"
+	locked={verifying || (!!codes && !acknowledged)}
+>
 	{#if codes}
 		<RecoveryCodes {codes} bind:acknowledged />
 	{:else}
@@ -74,14 +84,23 @@
 			{/if}
 			<ol class="flex flex-col gap-4 text-sm text-fg-muted">
 				<li class="flex gap-3">
-					<span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-bg-subtle text-[12px] font-semibold text-fg">1</span>
+					<span
+						class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-bg-subtle text-[12px] font-semibold text-fg"
+						>1</span
+					>
 					<div class="flex-1">
 						<p class="font-medium text-fg">Scan this QR code with an authenticator app</p>
 						<p class="mt-0.5">Google Authenticator, 1Password, Aegis, Authy, and similar apps all work.</p>
 						<div class="mt-3 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
 							<div class="rounded-lg border border-border bg-white p-2">
 								{#if setup && !loading}
-									<img src={qrSrc} alt="TOTP enrolment QR code" width="160" height="160" class="block h-40 w-40" />
+									<img
+										src={qrSrc}
+										alt="TOTP enrolment QR code"
+										width="160"
+										height="160"
+										class="block h-40 w-40"
+									/>
 								{:else}
 									<Skeleton class="h-40 w-40" rounded="md" />
 								{/if}
@@ -90,7 +109,7 @@
 								<div class="min-w-0 text-[13px]">
 									<p class="text-fg-subtle">Or enter the key manually:</p>
 									<div class="mt-1 flex items-center gap-1">
-										<code class="break-all font-mono text-fg">{setup.secret}</code>
+										<code class="font-mono break-all text-fg">{setup.secret}</code>
 										<CopyButton text={setup.secret} label="Copy secret" />
 									</div>
 								</div>
@@ -99,7 +118,10 @@
 					</div>
 				</li>
 				<li class="flex gap-3">
-					<span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-bg-subtle text-[12px] font-semibold text-fg">2</span>
+					<span
+						class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-bg-subtle text-[12px] font-semibold text-fg"
+						>2</span
+					>
 					<div class="flex-1">
 						<p class="font-medium text-fg">Enter the 6-digit code from the app</p>
 						<form
@@ -121,7 +143,9 @@
 								disabled={!setup}
 								class="w-40"
 							/>
-							<Button variant="primary" type="submit" loading={verifying} disabled={!isTotpCode(code)}>Verify</Button>
+							<Button variant="primary" type="submit" loading={verifying} disabled={!isTotpCode(code)}
+								>Verify</Button
+							>
 						</form>
 					</div>
 				</li>

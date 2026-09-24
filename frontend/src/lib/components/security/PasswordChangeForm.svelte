@@ -52,9 +52,31 @@
 		{#if error}
 			<Alert tone="danger">{error}</Alert>
 		{/if}
-		<Input label="Current password" type="password" autocomplete="current-password" bind:value={current} error={show('current')} onblur={() => (touched = { ...touched, current: true })} />
-		<Input label="New password" type="password" autocomplete="new-password" bind:value={next} hint="10–128 characters." error={show('next')} onblur={() => (touched = { ...touched, next: true })} />
-		<Input label="Confirm new password" type="password" autocomplete="new-password" bind:value={confirm} error={show('confirm')} onblur={() => (touched = { ...touched, confirm: true })} />
+		<Input
+			label="Current password"
+			type="password"
+			autocomplete="current-password"
+			bind:value={current}
+			error={show('current')}
+			onblur={() => (touched = { ...touched, current: true })}
+		/>
+		<Input
+			label="New password"
+			type="password"
+			autocomplete="new-password"
+			bind:value={next}
+			hint="10–128 characters."
+			error={show('next')}
+			onblur={() => (touched = { ...touched, next: true })}
+		/>
+		<Input
+			label="Confirm new password"
+			type="password"
+			autocomplete="new-password"
+			bind:value={confirm}
+			error={show('confirm')}
+			onblur={() => (touched = { ...touched, confirm: true })}
+		/>
 		<div>
 			<Button variant="primary" type="submit" loading={saving}>Update password</Button>
 		</div>

@@ -79,7 +79,10 @@ export function validatePeerName(value: string): string | null {
 }
 
 /** Comma-separated list of CIDRs (prefix required). */
-export function validateCidrList(value: string, opts: { requirePrefix?: boolean; allowEmpty?: boolean } = {}): string | null {
+export function validateCidrList(
+	value: string,
+	opts: { requirePrefix?: boolean; allowEmpty?: boolean } = {}
+): string | null {
 	const items = splitList(value);
 	if (items.length === 0) return opts.allowEmpty ? null : 'Enter at least one address';
 	for (const item of items) {
@@ -93,7 +96,8 @@ export function validateInterfaceAddress(value: string): string | null {
 	const items = splitList(value);
 	if (items.length === 0) return 'Address is required';
 	for (const item of items) {
-		if (!isCIDR(item, { requirePrefix: true })) return `"${item}" must be an IP with prefix, e.g. 10.8.0.1/24`;
+		if (!isCIDR(item, { requirePrefix: true }))
+			return `"${item}" must be an IP with prefix, e.g. 10.8.0.1/24`;
 		const [, prefix] = item.split('/');
 		if (item.includes(':') ? Number(prefix) === 128 : Number(prefix) === 32)
 			return `"${item}" has no room for peers — use a wider prefix`;

@@ -1,10 +1,18 @@
 <script lang="ts">
 	/** Create / edit peer dialog with inline validation and split-tunnel presets. */
+	import { untrack } from 'svelte';
 	import { api, ApiError, toApiError } from '$lib/api';
 	import type { Interface, Peer, PeerCreateRequest, PeerUpdateRequest } from '$lib/api/types';
 	import { settingsStore } from '$lib/stores/settings.svelte';
 	import { toast } from '$lib/stores/toast.svelte';
-	import { FULL_TUNNEL, LAN_RANGES, interfaceSubnets, isFullTunnel, joinList, splitList } from '$lib/utils/format';
+	import {
+		FULL_TUNNEL,
+		LAN_RANGES,
+		interfaceSubnets,
+		isFullTunnel,
+		joinList,
+		splitList
+	} from '$lib/utils/format';
 	import {
 		validateCidrList,
 		validateDnsList,
@@ -95,7 +103,14 @@
 			allowedIps = '';
 			const def = s?.default_client_allowed_ips ?? FULL_TUNNEL;
 			tunnel = isFullTunnel(def) ? 'full' : 'split';
-			preset = tunnel === 'split' ? (sameList(def, lanPreset) ? 'lan' : sameList(def, subnetPreset) ? 'subnet' : 'custom') : 'lan';
+			preset =
+				tunnel === 'split'
+					? sameList(def, lanPreset)
+						? 'lan'
+						: sameList(def, subnetPreset)
+							? 'subnet'
+							: 'custom'
+					: 'lan';
 			customRoutes = tunnel === 'split' ? def : lanPreset;
 			dns = '';
 			keepalive = String(s?.default_keepalive ?? 25);
@@ -117,7 +132,7 @@
 	}
 
 	$effect(() => {
-		if (open) reset();
+		if (open) untrack(reset);
 	});
 
 	const effectiveRoutes = $derived.by(() => {
@@ -193,7 +208,12 @@
 	}
 </script>
 
-<Dialog bind:open title={editing ? `Edit ${peer?.name}` : `New peer on ${iface.name}`} size="lg" locked={submitting}>
+<Dialog
+	bind:open
+	title={editing ? `Edit ${peer?.name}` : `New peer on ${iface.name}`}
+	size="lg"
+	locked={submitting}
+>
 	<form
 		id="peer-form"
 		class="flex flex-col gap-5"
@@ -259,7 +279,9 @@
 				]}
 			/>
 			{#if tunnel === 'full'}
-				<p class="text-[13px] text-fg-subtle">All client traffic is routed through the VPN (<span class="font-mono">{FULL_TUNNEL}</span>).</p>
+				<p class="text-[13px] text-fg-subtle">
+					All client traffic is routed through the VPN (<span class="font-mono">{FULL_TUNNEL}</span>).
+				</p>
 			{:else}
 				<div class="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Split-tunnel preset">
 					{#each [{ v: 'lan', t: 'LAN only', d: 'Private ranges + this subnet' }, { v: 'subnet', t: 'Interface subnet', d: subnetPreset || 'No subnet' }, { v: 'custom', t: 'Custom', d: 'Enter your own routes' }] as p (p.v)}
@@ -270,7 +292,7 @@
 								<input type="radio" name="preset" value={p.v} bind:group={preset} class="accent-accent" />
 								{p.t}
 							</span>
-							<span class="pl-5 font-mono text-[11px] text-fg-subtle break-all">{p.d}</span>
+							<span class="pl-5 font-mono text-[11px] break-all text-fg-subtle">{p.d}</span>
 						</label>
 					{/each}
 				</div>
@@ -286,7 +308,7 @@
 						onblur={() => (touched = { ...touched, routes: true })}
 					/>
 				{:else}
-					<p class="font-mono text-[12px] text-fg-subtle break-all">{effectiveRoutes}</p>
+					<p class="font-mono text-[12px] break-all text-fg-subtle">{effectiveRoutes}</p>
 				{/if}
 			{/if}
 		</fieldset>
@@ -328,7 +350,12 @@
 				]}
 			/>
 			{#if expiryMode === 'custom'}
-				<DateTimePicker label="Expires at" bind:value={expiresAt} error={show('expiresAt')} min={new Date().toISOString()} />
+				<DateTimePicker
+					label="Expires at"
+					bind:value={expiresAt}
+					error={show('expiresAt')}
+					min={new Date().toISOString()}
+				/>
 			{:else if expiryMode !== 'none'}
 				<p class="text-[13px] text-fg-subtle">The peer disables itself automatically when it expires.</p>
 			{/if}
@@ -337,7 +364,11 @@
 		<Textarea label="Notes" bind:value={notes} rows={2} placeholder="Optional notes, e.g. device owner" />
 
 		{#if editing}
-			<Switch bind:checked={enabled} label="Enabled" description="Disabled peers are removed from the running configuration." />
+			<Switch
+				bind:checked={enabled}
+				label="Enabled"
+				description="Disabled peers are removed from the running configuration."
+			/>
 		{/if}
 	</form>
 

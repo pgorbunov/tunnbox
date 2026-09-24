@@ -12,7 +12,14 @@
 		children: Snippet;
 	}
 
-	let { tone = 'neutral', size = 'md', outline = false, class: className = '', title, children }: Props = $props();
+	let {
+		tone = 'neutral',
+		size = 'md',
+		outline = false,
+		class: className = '',
+		title,
+		children
+	}: Props = $props();
 
 	const TONES: Record<BadgeTone, string> = {
 		neutral: 'bg-bg-subtle text-fg-muted border-border',
@@ -26,7 +33,7 @@
 
 <span
 	{title}
-	class={`inline-flex items-center gap-1 whitespace-nowrap rounded-full border font-medium
+	class={`inline-flex items-center gap-1 rounded-full border font-medium whitespace-nowrap
 		${size === 'sm' ? 'h-5 px-1.5 text-[11px]' : 'h-6 px-2 text-xs'}
 		${outline ? 'bg-transparent' : ''} ${TONES[tone]} ${className}`}
 >

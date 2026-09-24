@@ -19,9 +19,7 @@ function readStored(): Theme {
 }
 
 let theme = $state<Theme>(readStored());
-let systemDark = $state<boolean>(
-	browser ? window.matchMedia('(prefers-color-scheme: dark)').matches : false
-);
+let systemDark = $state<boolean>(browser ? window.matchMedia('(prefers-color-scheme: dark)').matches : false);
 let initialized = false;
 
 function apply(resolved: 'light' | 'dark') {

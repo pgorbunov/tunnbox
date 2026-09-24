@@ -34,14 +34,13 @@
 		{id}
 		{rows}
 		bind:value
-		class={`w-full rounded-md border bg-surface px-3 py-2 text-sm text-fg placeholder:text-fg-subtle shadow-sm transition-colors duration-150 resize-y
+		class={`w-full resize-y rounded-md border bg-surface px-3 py-2 text-sm text-fg shadow-sm transition-colors duration-150 placeholder:text-fg-subtle
 			${mono ? 'font-mono text-[13px]' : ''}
 			${error ? 'border-danger focus-visible:outline-danger' : 'border-border hover:border-border-strong'}
-			disabled:opacity-60 disabled:bg-bg-subtle`}
+			disabled:bg-bg-subtle disabled:opacity-60`}
 		aria-invalid={error ? true : undefined}
 		aria-describedby={error ? errorId : hint ? hintId : undefined}
-		{...rest}
-	></textarea>
+		{...rest}></textarea>
 	{#if error}
 		<p id={errorId} class="text-[13px] text-danger" role="alert">{error}</p>
 	{:else if hint}

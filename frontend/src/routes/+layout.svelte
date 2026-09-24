@@ -18,7 +18,9 @@
 	let { children }: { children: Snippet } = $props();
 
 	const PUBLIC_PREFIXES = ['/login', '/setup', '/share/'];
-	const isPublic = $derived(PUBLIC_PREFIXES.some((p) => page.url.pathname === p || page.url.pathname.startsWith(p)));
+	const isPublic = $derived(
+		PUBLIC_PREFIXES.some((p) => page.url.pathname === p || page.url.pathname.startsWith(p))
+	);
 	const isShare = $derived(page.url.pathname.startsWith('/share/'));
 
 	themeStore.init();
@@ -48,7 +50,9 @@
 		if (status === 'authed') {
 			if (path === '/login' || (path === '/setup' && !auth.setupFlow)) {
 				const next = page.url.searchParams.get('next');
-				void goto(next && next.startsWith('/') && !next.startsWith('//') ? next : '/', { replaceState: true });
+				void goto(next && next.startsWith('/') && !next.startsWith('//') ? next : '/', {
+					replaceState: true
+				});
 			}
 		}
 	});

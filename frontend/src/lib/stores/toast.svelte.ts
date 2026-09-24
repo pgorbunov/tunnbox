@@ -19,11 +19,19 @@ let toasts = $state<Toast[]>([]);
 let seq = 0;
 const timers = new Map<number, ReturnType<typeof setTimeout>>();
 
-function add(kind: ToastKind, title: string, opts: { description?: string; action?: ToastAction; duration?: number } = {}) {
+function add(
+	kind: ToastKind,
+	title: string,
+	opts: { description?: string; action?: ToastAction; duration?: number } = {}
+) {
 	const id = ++seq;
 	const duration = opts.duration ?? (kind === 'error' ? 8000 : 4500);
 	toasts = [...toasts, { id, kind, title, description: opts.description, action: opts.action, duration }];
-	if (duration > 0) timers.set(id, setTimeout(() => dismiss(id), duration));
+	if (duration > 0)
+		timers.set(
+			id,
+			setTimeout(() => dismiss(id), duration)
+		);
 	return id;
 }
 
@@ -58,7 +66,10 @@ export const toast = {
 	resume(id: number) {
 		const item = toasts.find((t) => t.id === id);
 		if (item && item.duration > 0 && !timers.has(id)) {
-			timers.set(id, setTimeout(() => dismiss(id), 2000));
+			timers.set(
+				id,
+				setTimeout(() => dismiss(id), 2000)
+			);
 		}
 	}
 };

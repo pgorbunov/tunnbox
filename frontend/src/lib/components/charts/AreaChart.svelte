@@ -29,7 +29,15 @@
 		mode?: 'rate' | 'volume';
 	}
 
-	let { points, bucketSeconds, title, loading = false, refreshing = false, height = 240, mode = 'rate' }: Props = $props();
+	let {
+		points,
+		bucketSeconds,
+		title,
+		loading = false,
+		refreshing = false,
+		height = 240,
+		mode = 'rate'
+	}: Props = $props();
 
 	const id = uid('chart');
 	let container: HTMLDivElement | null = $state(null);
@@ -125,7 +133,8 @@
 			const t = xMin + (spanMs * k) / (count - 1);
 			const d = new Date(t);
 			const label = multiDay
-				? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + (spanMs < 8 * 86400000 ? ` ${formatTime(d)}` : '')
+				? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
+					(spanMs < 8 * 86400000 ? ` ${formatTime(d)}` : '')
 				: formatTime(d);
 			out.push({ x: M.left + (plotW * k) / (count - 1), label });
 		}
@@ -218,7 +227,7 @@
 	});
 </script>
 
-<div class="flex flex-col gap-3">
+<div class="flex min-w-0 flex-col gap-3">
 	<div class="flex flex-wrap items-center justify-between gap-2">
 		<ul class="flex items-center gap-4 text-[13px] text-fg-muted" aria-label="Series">
 			<li class="flex items-center gap-2">
@@ -248,10 +257,10 @@
 		<Skeleton class="w-full" rounded="md" />
 		<div style={`height:${height}px`} class="skeleton rounded-md"></div>
 	{:else if tableView}
-		<div class="scrollbar-thin max-h-[320px] overflow-auto rounded-md border border-border">
+		<div class="max-h-[320px] overflow-auto rounded-md border border-border scrollbar-thin">
 			<table class="w-full text-[13px]">
 				<caption class="sr-only">{title}</caption>
-				<thead class="sticky top-0 bg-bg-subtle text-left text-xs uppercase tracking-wide text-fg-subtle">
+				<thead class="sticky top-0 bg-bg-subtle text-left text-xs tracking-wide text-fg-subtle uppercase">
 					<tr>
 						<th scope="col" class="px-3 py-2 font-semibold">Time</th>
 						<th scope="col" class="px-3 py-2 text-right font-semibold">Download</th>
@@ -262,8 +271,8 @@
 					{#each points as p, i (p.ts)}
 						<tr>
 							<td class="px-3 py-1.5 text-fg-muted">{formatDateTime(p.ts)}</td>
-							<td class="tabular px-3 py-1.5 text-right text-fg">{fmt(rx[i])}</td>
-							<td class="tabular px-3 py-1.5 text-right text-fg">{fmt(tx[i])}</td>
+							<td class="px-3 py-1.5 text-right text-fg tabular">{fmt(rx[i])}</td>
+							<td class="px-3 py-1.5 text-right text-fg tabular">{fmt(tx[i])}</td>
 						</tr>
 					{:else}
 						<tr><td colspan="3" class="px-3 py-6 text-center text-fg-muted">No data yet</td></tr>
@@ -274,11 +283,13 @@
 	{:else}
 		<div
 			bind:this={container}
-			class={`relative w-full select-none transition-opacity duration-200 ${refreshing ? 'opacity-70' : ''}`}
+			class={`relative w-full min-w-0 overflow-hidden transition-opacity duration-200 select-none ${refreshing ? 'opacity-70' : ''}`}
 			style={`height:${height}px`}
 		>
 			{#if !enough}
-				<div class="absolute inset-0 flex items-center justify-center rounded-md border border-dashed border-border text-sm text-fg-subtle">
+				<div
+					class="absolute inset-0 flex items-center justify-center rounded-md border border-dashed border-border text-sm text-fg-subtle"
+				>
 					Not enough data yet — stats appear after a couple of samples.
 				</div>
 			{:else}
@@ -293,9 +304,9 @@
 					aria-valuetext={valueText}
 					aria-describedby={`${id}-summary`}
 					class="absolute inset-0 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
-					onpointermove={onpointermove}
-					onpointerleave={onpointerleave}
-					onkeydown={onkeydown}
+					{onpointermove}
+					{onpointerleave}
+					{onkeydown}
 					onfocus={() => {
 						hasFocus = true;
 						if (focused === null) focused = last;
@@ -303,7 +314,13 @@
 					onblur={() => (hasFocus = false)}
 				></div>
 				<p id={`${id}-summary`} class="sr-only">{summary}</p>
-				<svg {width} {height} viewBox={`0 0 ${width} ${height}`} aria-hidden="true" class="pointer-events-none block overflow-visible">
+				<svg
+					{height}
+					viewBox={`0 0 ${width} ${height}`}
+					preserveAspectRatio="none"
+					aria-hidden="true"
+					class="pointer-events-none block w-full overflow-visible"
+				>
 					<defs>
 						<clipPath id={`${id}-clip`}>
 							<rect x={M.left} y={M.top} width={plotW} height={plotH} />
@@ -312,14 +329,33 @@
 
 					<!-- grid + y ticks -->
 					{#each yAxis.ticks as t (t)}
-						<line x1={M.left} x2={M.left + plotW} y1={y(t)} y2={y(t)} stroke="var(--chart-grid)" stroke-width="1" shape-rendering="crispEdges" />
-						<text x={M.left - 8} y={y(t)} text-anchor="end" dominant-baseline="middle" class="tabular fill-fg-subtle text-[11px]">
+						<line
+							x1={M.left}
+							x2={M.left + plotW}
+							y1={y(t)}
+							y2={y(t)}
+							stroke="var(--chart-grid)"
+							stroke-width="1"
+							shape-rendering="crispEdges"
+						/>
+						<text
+							x={M.left - 8}
+							y={y(t)}
+							text-anchor="end"
+							dominant-baseline="middle"
+							class="fill-fg-subtle text-[11px] tabular"
+						>
 							{t === 0 ? '0' : fmt(t).replace('.0 ', ' ')}
 						</text>
 					{/each}
 					<!-- x ticks -->
 					{#each xTicks as t, i (i)}
-						<text x={t.x} y={height - 6} text-anchor={i === 0 ? 'start' : i === xTicks.length - 1 ? 'end' : 'middle'} class="fill-fg-subtle text-[11px]">
+						<text
+							x={t.x}
+							y={height - 6}
+							text-anchor={i === 0 ? 'start' : i === xTicks.length - 1 ? 'end' : 'middle'}
+							class="fill-fg-subtle text-[11px]"
+						>
 							{t.label}
 						</text>
 					{/each}
@@ -327,23 +363,76 @@
 					<g clip-path={`url(#${id}-clip)`}>
 						<path d={rxArea} fill="var(--chart-download)" fill-opacity="0.1" />
 						<path d={txArea} fill="var(--chart-upload)" fill-opacity="0.1" />
-						<path d={rxLine} fill="none" stroke="var(--chart-download)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
-						<path d={txLine} fill="none" stroke="var(--chart-upload)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+						<path
+							d={rxLine}
+							fill="none"
+							stroke="var(--chart-download)"
+							stroke-width="2"
+							stroke-linejoin="round"
+							stroke-linecap="round"
+						/>
+						<path
+							d={txLine}
+							fill="none"
+							stroke="var(--chart-upload)"
+							stroke-width="2"
+							stroke-linejoin="round"
+							stroke-linecap="round"
+						/>
 					</g>
 
 					<!-- direct end labels (text in ink, colored key beside it) -->
 					<g class="text-[11px]">
-						<circle cx={x(last)} cy={y(rx[last])} r="4" fill="var(--chart-download)" stroke="var(--surface)" stroke-width="2" />
-						<text x={x(last) + 8} y={endLabels.rx} dominant-baseline="middle" class="tabular fill-fg-muted">{fmt(rx[last])}</text>
-						<circle cx={x(last)} cy={y(tx[last])} r="4" fill="var(--chart-upload)" stroke="var(--surface)" stroke-width="2" />
-						<text x={x(last) + 8} y={endLabels.tx} dominant-baseline="middle" class="tabular fill-fg-muted">{fmt(tx[last])}</text>
+						<circle
+							cx={x(last)}
+							cy={y(rx[last])}
+							r="4"
+							fill="var(--chart-download)"
+							stroke="var(--surface)"
+							stroke-width="2"
+						/>
+						<text x={x(last) + 8} y={endLabels.rx} dominant-baseline="middle" class="fill-fg-muted tabular"
+							>{fmt(rx[last])}</text
+						>
+						<circle
+							cx={x(last)}
+							cy={y(tx[last])}
+							r="4"
+							fill="var(--chart-upload)"
+							stroke="var(--surface)"
+							stroke-width="2"
+						/>
+						<text x={x(last) + 8} y={endLabels.tx} dominant-baseline="middle" class="fill-fg-muted tabular"
+							>{fmt(tx[last])}</text
+						>
 					</g>
 
 					<!-- crosshair -->
 					{#if active !== null}
-						<line x1={x(active)} x2={x(active)} y1={M.top} y2={M.top + plotH} stroke="var(--border-strong)" stroke-width="1" />
-						<circle cx={x(active)} cy={y(rx[active])} r="4.5" fill="var(--chart-download)" stroke="var(--surface)" stroke-width="2" />
-						<circle cx={x(active)} cy={y(tx[active])} r="4.5" fill="var(--chart-upload)" stroke="var(--surface)" stroke-width="2" />
+						<line
+							x1={x(active)}
+							x2={x(active)}
+							y1={M.top}
+							y2={M.top + plotH}
+							stroke="var(--border-strong)"
+							stroke-width="1"
+						/>
+						<circle
+							cx={x(active)}
+							cy={y(rx[active])}
+							r="4.5"
+							fill="var(--chart-download)"
+							stroke="var(--surface)"
+							stroke-width="2"
+						/>
+						<circle
+							cx={x(active)}
+							cy={y(tx[active])}
+							r="4.5"
+							fill="var(--chart-upload)"
+							stroke="var(--surface)"
+							stroke-width="2"
+						/>
 					{/if}
 				</svg>
 
@@ -355,12 +444,17 @@
 					>
 						<p class="mb-1.5 text-fg-subtle">{formatDateTime(points[active].ts)}</p>
 						<div class="flex items-center justify-between gap-2">
-							<span class="flex items-center gap-1.5 text-fg-muted"><span class="inline-block h-0.5 w-3 bg-chart-download" aria-hidden="true"></span>Download</span>
-							<span class="tabular font-semibold text-fg">{fmt(rx[active])}</span>
+							<span class="flex items-center gap-1.5 text-fg-muted"
+								><span class="inline-block h-0.5 w-3 bg-chart-download" aria-hidden="true"
+								></span>Download</span
+							>
+							<span class="font-semibold text-fg tabular">{fmt(rx[active])}</span>
 						</div>
 						<div class="mt-1 flex items-center justify-between gap-2">
-							<span class="flex items-center gap-1.5 text-fg-muted"><span class="inline-block h-0.5 w-3 bg-chart-upload" aria-hidden="true"></span>Upload</span>
-							<span class="tabular font-semibold text-fg">{fmt(tx[active])}</span>
+							<span class="flex items-center gap-1.5 text-fg-muted"
+								><span class="inline-block h-0.5 w-3 bg-chart-upload" aria-hidden="true"></span>Upload</span
+							>
+							<span class="font-semibold text-fg tabular">{fmt(tx[active])}</span>
 						</div>
 					</div>
 				{/if}

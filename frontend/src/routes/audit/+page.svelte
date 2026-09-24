@@ -20,8 +20,10 @@
 
 	let actions = $state<string[]>([]);
 	let action = $state('');
-	let username = $state(page.url.searchParams.get('username') ?? '');
-	let query = $state(page.url.searchParams.get('q') ?? '');
+	const initialUsername = page.url.searchParams.get('username') ?? '';
+	const initialQuery = page.url.searchParams.get('q') ?? '';
+	let username = $state(initialUsername);
+	let query = $state(initialQuery);
 	let from = $state('');
 	let to = $state('');
 	let pageNo = $state(1);
@@ -35,7 +37,7 @@
 	let expanded = $state<Set<number>>(new Set());
 	let abort: AbortController | null = null;
 
-	let debounced = $state({ username: username, q: query });
+	let debounced = $state({ username: initialUsername.trim(), q: initialQuery.trim() });
 	let timer: ReturnType<typeof setTimeout> | null = null;
 	$effect(() => {
 		const u = username;
@@ -94,7 +96,8 @@
 		if (debounced.username) sp.set('username', debounced.username);
 		const s = sp.toString();
 		const target = s ? `/audit?${s}` : '/audit';
-		if (page.url.pathname + page.url.search !== target) void goto(target, { replaceState: true, noScroll: true, keepFocus: true });
+		if (page.url.pathname + page.url.search !== target)
+			void goto(target, { replaceState: true, noScroll: true, keepFocus: true });
 	});
 
 	async function exportCsv() {
@@ -116,7 +119,8 @@
 	}
 
 	function tone(a: string): 'neutral' | 'success' | 'warning' | 'danger' | 'info' {
-		if (/failed|locked|deleted|revoked|disabled|down/.test(a)) return a.includes('failed') || a.includes('locked') || a.includes('deleted') ? 'danger' : 'warning';
+		if (/failed|locked|deleted|revoked|disabled|down/.test(a))
+			return a.includes('failed') || a.includes('locked') || a.includes('deleted') ? 'danger' : 'warning';
 		if (/created|enabled|up|login$|setup/.test(a)) return 'success';
 		if (/updated|rotated|changed/.test(a)) return 'info';
 		return 'neutral';
@@ -132,7 +136,10 @@
 	];
 
 	const hasFilters = $derived(!!action || !!debounced.username || !!debounced.q || !!from || !!to);
-	const actionOptions = $derived([{ value: '', label: 'All actions' }, ...actions.map((a) => ({ value: a, label: a }))]);
+	const actionOptions = $derived([
+		{ value: '', label: 'All actions' },
+		...actions.map((a) => ({ value: a, label: a }))
+	]);
 </script>
 
 <svelte:head>
@@ -147,18 +154,60 @@
 		</Button>
 	{/snippet}
 	<div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-		<Input label="Search" hideLabel bind:value={query} placeholder="Search target or details…" size="sm" data-hotkey-search type="search">
+		<Input
+			label="Search"
+			hideLabel
+			bind:value={query}
+			placeholder="Search target or details…"
+			size="sm"
+			data-hotkey-search
+			type="search"
+		>
 			{#snippet leading()}<Search class="h-4 w-4" />{/snippet}
 		</Input>
-		<Select label="Action" hideLabel size="sm" bind:value={action} options={actionOptions} onchange={() => (pageNo = 1)} />
-		<Input label="Username" hideLabel bind:value={username} placeholder="Username" size="sm" autocomplete="off" />
+		<Select
+			label="Action"
+			hideLabel
+			size="sm"
+			bind:value={action}
+			options={actionOptions}
+			onchange={() => (pageNo = 1)}
+		/>
+		<Input
+			label="Username"
+			hideLabel
+			bind:value={username}
+			placeholder="Username"
+			size="sm"
+			autocomplete="off"
+		/>
 		<div class="flex flex-col gap-1">
 			<label for="audit-from" class="sr-only">From</label>
-			<input id="audit-from" type="datetime-local" value={toDatetimeLocal(from)} oninput={(e) => { from = fromDatetimeLocal(e.currentTarget.value) ?? ''; pageNo = 1; }} class="h-9 w-full rounded-md border border-border bg-surface px-3 text-[13px] text-fg shadow-sm" aria-label="From date" />
+			<input
+				id="audit-from"
+				type="datetime-local"
+				value={toDatetimeLocal(from)}
+				oninput={(e) => {
+					from = fromDatetimeLocal(e.currentTarget.value) ?? '';
+					pageNo = 1;
+				}}
+				class="h-9 w-full rounded-md border border-border bg-surface px-3 text-[13px] text-fg shadow-sm"
+				aria-label="From date"
+			/>
 		</div>
 		<div class="flex flex-col gap-1">
 			<label for="audit-to" class="sr-only">To</label>
-			<input id="audit-to" type="datetime-local" value={toDatetimeLocal(to)} oninput={(e) => { to = fromDatetimeLocal(e.currentTarget.value) ?? ''; pageNo = 1; }} class="h-9 w-full rounded-md border border-border bg-surface px-3 text-[13px] text-fg shadow-sm" aria-label="To date" />
+			<input
+				id="audit-to"
+				type="datetime-local"
+				value={toDatetimeLocal(to)}
+				oninput={(e) => {
+					to = fromDatetimeLocal(e.currentTarget.value) ?? '';
+					pageNo = 1;
+				}}
+				class="h-9 w-full rounded-md border border-border bg-surface px-3 text-[13px] text-fg shadow-sm"
+				aria-label="To date"
+			/>
 		</div>
 	</div>
 </PageHeader>
@@ -167,10 +216,21 @@
 	{#if error && entries.length === 0}
 		<ErrorState message={error} onretry={load} />
 	{:else}
-		<Table {columns} rows={entries} rowKey={(e) => e.id} caption="Audit entries" {loading} refreshing={loading && entries.length > 0} skeletonRows={8} dense>
+		<Table
+			{columns}
+			rows={entries}
+			rowKey={(e) => e.id}
+			caption="Audit entries"
+			{loading}
+			refreshing={loading && entries.length > 0}
+			skeletonRows={8}
+			dense
+		>
 			{#snippet cell(e, col)}
 				{#if col.key === 'time'}
-					<span class="tabular text-[13px] text-fg-muted">{formatDateTime(e.created_at, { dateStyle: 'medium', timeStyle: 'medium' })}</span>
+					<span class="text-[13px] text-fg-muted tabular"
+						>{formatDateTime(e.created_at, { dateStyle: 'medium', timeStyle: 'medium' })}</span
+					>
 				{:else if col.key === 'user'}
 					<span class="truncate font-medium text-fg">{e.username ?? 'system'}</span>
 				{:else if col.key === 'action'}
@@ -188,12 +248,19 @@
 							aria-label={expanded.has(e.id) ? 'Hide details' : 'Show details'}
 							onclick={() => toggleExpanded(e.id)}
 						>
-							{#if expanded.has(e.id)}<ChevronDown class="h-4 w-4" />{:else}<ChevronRight class="h-4 w-4" />{/if}
+							{#if expanded.has(e.id)}<ChevronDown class="h-4 w-4" />{:else}<ChevronRight
+									class="h-4 w-4"
+								/>{/if}
 						</button>
 					{/if}
 				{/if}
 				{#if col.key === 'action' && expanded.has(e.id) && e.details}
-					<pre class="mt-1.5 max-w-xl overflow-auto whitespace-pre-wrap break-all rounded-sm bg-bg-subtle p-2 font-mono text-[12px] text-fg-muted">{JSON.stringify(e.details, null, 2)}</pre>
+					<pre
+						class="mt-1.5 max-w-xl overflow-auto rounded-sm bg-bg-subtle p-2 font-mono text-[12px] break-all whitespace-pre-wrap text-fg-muted">{JSON.stringify(
+							e.details,
+							null,
+							2
+						)}</pre>
 				{/if}
 			{/snippet}
 			{#snippet card(e)}
@@ -202,16 +269,28 @@
 						<Badge tone={tone(e.action)} size="sm"><span class="font-mono">{e.action}</span></Badge>
 						<span class="font-medium text-fg">{e.username ?? 'system'}</span>
 					</div>
-					<p class="mt-1 text-[12px] text-fg-subtle">{formatDateTime(e.created_at)}{#if e.ip} · {e.ip}{/if}</p>
+					<p class="mt-1 text-[12px] text-fg-subtle">
+						{formatDateTime(e.created_at)}{#if e.ip}
+							· {e.ip}{/if}
+					</p>
 					{#if e.target}<p class="mt-0.5 font-mono text-[12px] text-fg-muted">{e.target}</p>{/if}
 					{#if e.details && Object.keys(e.details).length}
-						<pre class="mt-1.5 overflow-auto whitespace-pre-wrap break-all rounded-sm bg-bg-subtle p-2 font-mono text-[11px] text-fg-muted">{JSON.stringify(e.details, null, 2)}</pre>
+						<pre
+							class="mt-1.5 overflow-auto rounded-sm bg-bg-subtle p-2 font-mono text-[11px] break-all whitespace-pre-wrap text-fg-muted">{JSON.stringify(
+								e.details,
+								null,
+								2
+							)}</pre>
 					{/if}
 				</div>
 			{/snippet}
 			{#snippet empty()}
 				{#if hasFilters}
-					<EmptyState compact title="No entries match" description="Adjust the filters or widen the date range.">
+					<EmptyState
+						compact
+						title="No entries match"
+						description="Adjust the filters or widen the date range."
+					>
 						{#snippet actions()}
 							<Button
 								size="sm"
@@ -228,7 +307,10 @@
 						{/snippet}
 					</EmptyState>
 				{:else}
-					<EmptyState title="No audit entries yet" description="Actions like sign-ins and configuration changes are recorded here.">
+					<EmptyState
+						title="No audit entries yet"
+						description="Actions like sign-ins and configuration changes are recorded here."
+					>
 						{#snippet icon()}<ScrollText class="h-6 w-6" />{/snippet}
 					</EmptyState>
 				{/if}

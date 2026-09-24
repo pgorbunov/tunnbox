@@ -166,14 +166,39 @@
 	];
 
 	const CONFIRM_COPY = {
-		delete: { title: 'Delete user?', message: 'The account and all its sessions and API keys are removed permanently.', label: 'Delete user', tone: 'danger' as const },
-		deactivate: { title: 'Deactivate user?', message: 'The user is signed out everywhere and their API keys stop working. You can reactivate later.', label: 'Deactivate', tone: 'danger' as const },
-		activate: { title: 'Activate user?', message: 'The user will be able to sign in again.', label: 'Activate', tone: 'primary' as const },
-		resetMfa: { title: 'Reset MFA?', message: 'Two-factor authentication is removed; the user can sign in with only a password until they enrol again.', label: 'Reset MFA', tone: 'danger' as const }
+		delete: {
+			title: 'Delete user?',
+			message: 'The account and all its sessions and API keys are removed permanently.',
+			label: 'Delete user',
+			tone: 'danger' as const
+		},
+		deactivate: {
+			title: 'Deactivate user?',
+			message: 'The user is signed out everywhere and their API keys stop working. You can reactivate later.',
+			label: 'Deactivate',
+			tone: 'danger' as const
+		},
+		activate: {
+			title: 'Activate user?',
+			message: 'The user will be able to sign in again.',
+			label: 'Activate',
+			tone: 'primary' as const
+		},
+		resetMfa: {
+			title: 'Reset MFA?',
+			message:
+				'Two-factor authentication is removed; the user can sign in with only a password until they enrol again.',
+			label: 'Reset MFA',
+			tone: 'danger' as const
+		}
 	};
 </script>
 
-<Card title="Users" description="Admins manage everything; operators manage interfaces and peers; viewers are read-only." flush>
+<Card
+	title="Users"
+	description="Admins manage everything; operators manage interfaces and peers; viewers are read-only."
+	flush
+>
 	{#snippet actions()}
 		<Button size="sm" variant="primary" onclick={() => openDialog('create')}>
 			<Plus class="h-4 w-4" aria-hidden="true" />
@@ -192,11 +217,15 @@
 				{:else if col.key === 'role'}
 					<Badge tone={u.role === 'admin' ? 'accent' : 'neutral'} size="sm">{u.role}</Badge>
 				{:else if col.key === 'status'}
-					<Badge tone={u.is_active ? 'success' : 'warning'} size="sm">{u.is_active ? 'Active' : 'Inactive'}</Badge>
+					<Badge tone={u.is_active ? 'success' : 'warning'} size="sm"
+						>{u.is_active ? 'Active' : 'Inactive'}</Badge
+					>
 				{:else if col.key === 'mfa'}
 					<span class="text-fg-muted">{u.totp_enabled ? 'Enabled' : 'Off'}</span>
 				{:else if col.key === 'last_login'}
-					<span class="text-fg-muted" title={formatDateTime(u.last_login_at)}>{u.last_login_at ? formatRelative(u.last_login_at) : 'Never'}</span>
+					<span class="text-fg-muted" title={formatDateTime(u.last_login_at)}
+						>{u.last_login_at ? formatRelative(u.last_login_at) : 'Never'}</span
+					>
 				{:else if col.key === 'actions'}
 					<div class="flex justify-end">
 						<DropdownMenu items={menuFor(u)} label={`Actions for ${u.username}`}>
@@ -212,10 +241,15 @@
 			{#snippet card(u)}
 				<div class="flex items-start justify-between gap-3">
 					<div class="text-sm">
-						<p class="font-medium text-fg">{u.username} {#if u.id === me?.id}<span class="text-[12px] text-fg-subtle">(you)</span>{/if}</p>
+						<p class="font-medium text-fg">
+							{u.username}
+							{#if u.id === me?.id}<span class="text-[12px] text-fg-subtle">(you)</span>{/if}
+						</p>
 						<p class="mt-1 flex flex-wrap gap-1.5">
 							<Badge tone={u.role === 'admin' ? 'accent' : 'neutral'} size="sm">{u.role}</Badge>
-							<Badge tone={u.is_active ? 'success' : 'warning'} size="sm">{u.is_active ? 'Active' : 'Inactive'}</Badge>
+							<Badge tone={u.is_active ? 'success' : 'warning'} size="sm"
+								>{u.is_active ? 'Active' : 'Inactive'}</Badge
+							>
 							{#if u.totp_enabled}<Badge tone="info" size="sm">MFA</Badge>{/if}
 						</p>
 					</div>
@@ -239,7 +273,11 @@
 
 <Dialog
 	bind:open={dialogOpen}
-	title={mode === 'create' ? 'New user' : mode === 'edit' ? `Change role for ${target?.username}` : `Reset password for ${target?.username}`}
+	title={mode === 'create'
+		? 'New user'
+		: mode === 'edit'
+			? `Change role for ${target?.username}`
+			: `Reset password for ${target?.username}`}
 	size="sm"
 	locked={saving}
 >
@@ -255,10 +293,23 @@
 			<Alert tone="danger">{formError}</Alert>
 		{/if}
 		{#if mode === 'create'}
-			<Input label="Username" bind:value={username} required autocomplete="off" error={touched ? errors.username : null} />
+			<Input
+				label="Username"
+				bind:value={username}
+				required
+				autocomplete="off"
+				error={touched ? errors.username : null}
+			/>
 		{/if}
 		{#if mode !== 'edit'}
-			<Input label={mode === 'create' ? 'Password' : 'New password'} type="password" autocomplete="new-password" bind:value={password} hint="10–128 characters." error={touched ? errors.password : null} />
+			<Input
+				label={mode === 'create' ? 'Password' : 'New password'}
+				type="password"
+				autocomplete="new-password"
+				bind:value={password}
+				hint="10–128 characters."
+				error={touched ? errors.password : null}
+			/>
 		{/if}
 		{#if mode !== 'password'}
 			<Select label="Role" bind:value={role} options={ROLES} />

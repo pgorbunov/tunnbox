@@ -26,15 +26,19 @@
 
 <div class="flex flex-col gap-4">
 	<Alert tone="warning" title="These codes are shown only once">
-		Each code signs you in once if you lose your authenticator. Store them somewhere safe, like a password manager.
+		Each code signs you in once if you lose your authenticator. Store them somewhere safe, like a password
+		manager.
 	</Alert>
-	<ul class="grid grid-cols-2 gap-2 rounded-md border border-border bg-bg-subtle p-4 font-mono text-sm text-fg" aria-label="Recovery codes">
+	<ul
+		class="grid grid-cols-2 gap-2 rounded-md border border-border bg-bg-subtle p-4 font-mono text-sm text-fg"
+		aria-label="Recovery codes"
+	>
 		{#each codes as c (c)}
 			<li class="tabular">{c}</li>
 		{/each}
 	</ul>
 	<div class="flex flex-wrap gap-2">
-		<CopyButton text={text} label="Copy codes" variant="button" />
+		<CopyButton {text} label="Copy codes" variant="button" />
 		<Button onclick={download}>
 			<Download class="h-4 w-4" aria-hidden="true" />
 			Download .txt

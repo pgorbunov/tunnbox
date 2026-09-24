@@ -77,7 +77,9 @@
 					${rail ? 'justify-center' : ''}
 					${active ? 'bg-accent-soft text-accent' : 'text-fg-muted hover:bg-bg-subtle hover:text-fg'}`}
 			>
-				<item.icon class={`h-5 w-5 shrink-0 ${active ? 'text-accent' : 'text-fg-subtle group-hover:text-fg'}`} />
+				<item.icon
+					class={`h-5 w-5 shrink-0 ${active ? 'text-accent' : 'text-fg-subtle group-hover:text-fg'}`}
+				/>
 				{#if !rail}
 					<span class="truncate">{item.label}</span>
 				{:else}
@@ -115,7 +117,7 @@
 		<IconButton
 			label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
 			onclick={ontogglecollapse}
-			class={collapsed ? 'w-full' : 'w-full justify-start px-2.5 gap-3'}
+			class={collapsed ? 'w-full' : 'w-full justify-start gap-3 px-2.5'}
 		>
 			{#if collapsed}
 				<ChevronsRight class="h-5 w-5" />
@@ -150,7 +152,9 @@
 				tabindex="-1"
 				onclick={() => (mobileOpen = false)}
 			></button>
-			<div class="anim-slide-in-left relative flex h-full w-72 max-w-[85vw] flex-col border-r border-border bg-surface shadow-lg">
+			<div
+				class="anim-slide-in-left relative flex h-full w-72 max-w-[85vw] flex-col border-r border-border bg-surface shadow-lg"
+			>
 				<div class="flex h-14 items-center justify-between border-b border-border px-4">
 					<Logo />
 					<IconButton label="Close navigation" size="sm" onclick={() => (mobileOpen = false)}>

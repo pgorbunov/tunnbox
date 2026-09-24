@@ -83,7 +83,9 @@
 			toast.success(`${updated.name} is ${updated.is_active ? 'up' : 'down'}`);
 		} catch (err) {
 			interfaces = prev;
-			toast.error(`Could not bring ${iface.name} ${up ? 'up' : 'down'}`, { description: toApiError(err).detail });
+			toast.error(`Could not bring ${iface.name} ${up ? 'up' : 'down'}`, {
+				description: toApiError(err).detail
+			});
 		} finally {
 			toggling = null;
 		}
@@ -109,7 +111,16 @@
 		{/if}
 	{/snippet}
 	<div class="flex flex-wrap items-center gap-2">
-		<Input label="Search interfaces" hideLabel bind:value={query} placeholder="Search…" size="sm" class="w-full sm:w-56" data-hotkey-search type="search">
+		<Input
+			label="Search interfaces"
+			hideLabel
+			bind:value={query}
+			placeholder="Search…"
+			size="sm"
+			class="w-full sm:w-56"
+			data-hotkey-search
+			type="search"
+		>
 			{#snippet leading()}<Search class="h-4 w-4" />{/snippet}
 		</Input>
 		<SegmentedControl
@@ -140,14 +151,22 @@
 {#if poller.loading && interfaces.length === 0}
 	<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3" aria-busy="true">
 		{#each [1, 2, 3] as i (i)}
-			<div class="rounded-lg border border-border bg-surface p-4"><Skeleton class="h-5 w-24" /><Skeleton class="mt-2 h-3 w-40" /><Skeleton class="mt-5 h-12 w-full" rounded="md" /></div>
+			<div class="rounded-lg border border-border bg-surface p-4">
+				<Skeleton class="h-5 w-24" /><Skeleton class="mt-2 h-3 w-40" /><Skeleton
+					class="mt-5 h-12 w-full"
+					rounded="md"
+				/>
+			</div>
 		{/each}
 	</div>
 {:else if poller.error && interfaces.length === 0}
 	<ErrorState message={poller.error.detail} onretry={() => poller.refresh()} retrying={poller.refreshing} />
 {:else if interfaces.length === 0}
 	<div class="rounded-lg border border-dashed border-border bg-surface">
-		<EmptyState title="No interfaces yet" description="An interface is a WireGuard network with its own subnet and port. Create one to start adding peers.">
+		<EmptyState
+			title="No interfaces yet"
+			description="An interface is a WireGuard network with its own subnet and port. Create one to start adding peers."
+		>
 			{#snippet icon()}<Network class="h-6 w-6" />{/snippet}
 			{#snippet actions()}
 				{#if canWrite}
@@ -178,7 +197,9 @@
 		</EmptyState>
 	</div>
 {:else}
-	<div class={`grid gap-4 transition-opacity sm:grid-cols-2 xl:grid-cols-3 ${poller.refreshing ? 'opacity-90' : ''}`}>
+	<div
+		class={`grid gap-4 transition-opacity sm:grid-cols-2 xl:grid-cols-3 ${poller.refreshing ? 'opacity-90' : ''}`}
+	>
 		{#each visible as iface (iface.id)}
 			<InterfaceCard {iface} {canWrite} toggling={toggling === iface.name} ontoggle={toggle} />
 		{/each}

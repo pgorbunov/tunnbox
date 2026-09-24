@@ -17,7 +17,16 @@
 		required?: boolean;
 	}
 
-	let { value = $bindable(''), label, hint, error = null, min, id = uid('dt'), disabled = false, required = false }: Props = $props();
+	let {
+		value = $bindable(''),
+		label,
+		hint,
+		error = null,
+		min,
+		id = uid('dt'),
+		disabled = false,
+		required = false
+	}: Props = $props();
 
 	let local = $state(toDatetimeLocal(value));
 

@@ -126,7 +126,10 @@
 		{@render empty()}
 	{/if}
 {:else if useCards}
-	<ul class={`divide-y divide-border transition-opacity ${refreshing ? 'opacity-70' : ''}`} aria-label={caption}>
+	<ul
+		class={`divide-y divide-border transition-opacity ${refreshing ? 'opacity-70' : ''}`}
+		aria-label={caption}
+	>
 		{#each rows as row (rowKey(row))}
 			<li class={`flex gap-3 px-4 py-3 ${selected?.has(rowKey(row)) ? 'bg-accent-soft/40' : ''}`}>
 				{#if selectable}
@@ -145,21 +148,30 @@
 		{/each}
 	</ul>
 {:else}
-	<div class={`scrollbar-thin w-full overflow-x-auto transition-opacity ${refreshing ? 'opacity-70' : ''}`}>
+	<div class={`w-full overflow-x-auto transition-opacity scrollbar-thin ${refreshing ? 'opacity-70' : ''}`}>
 		<table class="w-full border-collapse text-sm">
 			<caption class="sr-only">{caption}</caption>
 			<thead class="sticky top-0 z-10 bg-surface">
 				<tr class="border-b border-border">
 					{#if selectable}
 						<th scope="col" class="w-10 px-4 py-2">
-							<Checkbox checked={allSelected} indeterminate={someSelected} ariaLabel="Select all rows" onchange={toggleAll} />
+							<Checkbox
+								checked={allSelected}
+								indeterminate={someSelected}
+								ariaLabel="Select all rows"
+								onchange={toggleAll}
+							/>
 						</th>
 					{/if}
 					{#each columns as col (col.key)}
 						<th
 							scope="col"
-							aria-sort={col.sortable && sortKey === col.key ? (sortOrder === 'asc' ? 'ascending' : 'descending') : undefined}
-							class={`whitespace-nowrap px-4 py-2 text-xs font-semibold uppercase tracking-wide text-fg-subtle ${ALIGN[col.align ?? 'left']} ${col.class ?? ''}`}
+							aria-sort={col.sortable && sortKey === col.key
+								? sortOrder === 'asc'
+									? 'ascending'
+									: 'descending'
+								: undefined}
+							class={`px-4 py-2 text-xs font-semibold tracking-wide whitespace-nowrap text-fg-subtle uppercase ${ALIGN[col.align ?? 'left']} ${col.class ?? ''}`}
 						>
 							{#if col.sortable}
 								<button
@@ -169,7 +181,10 @@
 								>
 									{col.label}
 									{#if sortKey === col.key}
-										{#if sortOrder === 'asc'}<ArrowUp class="h-3.5 w-3.5" aria-hidden="true" />{:else}<ArrowDown class="h-3.5 w-3.5" aria-hidden="true" />{/if}
+										{#if sortOrder === 'asc'}<ArrowUp
+												class="h-3.5 w-3.5"
+												aria-hidden="true"
+											/>{:else}<ArrowDown class="h-3.5 w-3.5" aria-hidden="true" />{/if}
 									{:else}
 										<ChevronsUpDown class="h-3.5 w-3.5 opacity-50" aria-hidden="true" />
 									{/if}
@@ -195,11 +210,17 @@
 					>
 						{#if selectable}
 							<td class="w-10 px-4 py-2">
-								<Checkbox checked={isSelected} ariaLabel={`Select ${rowLabel?.(row) ?? 'row'}`} onchange={() => toggleRow(row)} />
+								<Checkbox
+									checked={isSelected}
+									ariaLabel={`Select ${rowLabel?.(row) ?? 'row'}`}
+									onchange={() => toggleRow(row)}
+								/>
 							</td>
 						{/if}
 						{#each columns as col (col.key)}
-							<td class={`${dense ? 'h-9 py-1' : 'h-10 py-1.5'} px-4 align-middle ${ALIGN[col.align ?? 'left']} ${col.class ?? ''}`}>
+							<td
+								class={`${dense ? 'h-9 py-1' : 'h-10 py-1.5'} px-4 align-middle ${ALIGN[col.align ?? 'left']} ${col.class ?? ''}`}
+							>
 								{@render cell(row, col)}
 							</td>
 						{/each}

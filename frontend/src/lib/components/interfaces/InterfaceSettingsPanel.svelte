@@ -5,7 +5,13 @@
 	import { settingsStore } from '$lib/stores/settings.svelte';
 	import { toast } from '$lib/stores/toast.svelte';
 	import { formatDateTime, joinList, splitList } from '$lib/utils/format';
-	import { validateDnsList, validateEndpoint, validateInterfaceAddress, validateMtu, validatePort } from '$lib/utils/validation';
+	import {
+		validateDnsList,
+		validateEndpoint,
+		validateInterfaceAddress,
+		validateMtu,
+		validatePort
+	} from '$lib/utils/validation';
 	import Alert from '$lib/components/ui/Alert.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
@@ -108,7 +114,12 @@
 </script>
 
 <div class="grid gap-6 lg:grid-cols-[1fr_320px]">
-	<Card title="Interface settings" description={canWrite ? 'Changes to address, port, MTU or scripts restart the interface if it is running.' : 'Read-only'}>
+	<Card
+		title="Interface settings"
+		description={canWrite
+			? 'Changes to address, port, MTU or scripts restart the interface if it is running.'
+			: 'Read-only'}
+	>
 		<form
 			class="flex flex-col gap-5"
 			onsubmit={(e) => {
@@ -120,28 +131,79 @@
 				<Alert tone="danger">{formError}</Alert>
 			{/if}
 			<div class="grid gap-4 sm:grid-cols-[1fr_160px]">
-				<Input label="Address" bind:value={address} mono required disabled={!canWrite} error={show('address')} onblur={() => touch('address')} />
-				<Input label="Listen port" bind:value={port} type="number" inputmode="numeric" min="1" max="65535" required disabled={!canWrite} error={show('port')} onblur={() => touch('port')} />
+				<Input
+					label="Address"
+					bind:value={address}
+					mono
+					required
+					disabled={!canWrite}
+					error={show('address')}
+					onblur={() => touch('address')}
+				/>
+				<Input
+					label="Listen port"
+					bind:value={port}
+					type="number"
+					inputmode="numeric"
+					min="1"
+					max="65535"
+					required
+					disabled={!canWrite}
+					error={show('port')}
+					onblur={() => touch('port')}
+				/>
 			</div>
 			<div class="grid gap-4 sm:grid-cols-2">
-				<Input label="DNS for clients" bind:value={dns} mono placeholder={settingsStore.server?.default_dns ?? ''} hint="Empty = global default." disabled={!canWrite} error={show('dns')} onblur={() => touch('dns')} />
-				<Input label="Public endpoint override" bind:value={endpoint} mono placeholder={settingsStore.server?.public_endpoint || 'Global default'} hint="Host or IP without port." disabled={!canWrite} error={show('endpoint')} onblur={() => touch('endpoint')} />
+				<Input
+					label="DNS for clients"
+					bind:value={dns}
+					mono
+					placeholder={settingsStore.server?.default_dns ?? ''}
+					hint="Empty = global default."
+					disabled={!canWrite}
+					error={show('dns')}
+					onblur={() => touch('dns')}
+				/>
+				<Input
+					label="Public endpoint override"
+					bind:value={endpoint}
+					mono
+					placeholder={settingsStore.server?.public_endpoint || 'Global default'}
+					hint="Host or IP without port."
+					disabled={!canWrite}
+					error={show('endpoint')}
+					onblur={() => touch('endpoint')}
+				/>
 			</div>
 			<div class="grid gap-4 sm:grid-cols-2">
-				<Input label="MTU" bind:value={mtu} type="number" inputmode="numeric" min="1280" max="1500" placeholder="Default" disabled={!canWrite} error={show('mtu')} onblur={() => touch('mtu')} />
+				<Input
+					label="MTU"
+					bind:value={mtu}
+					type="number"
+					inputmode="numeric"
+					min="1280"
+					max="1500"
+					placeholder="Default"
+					disabled={!canWrite}
+					error={show('mtu')}
+					onblur={() => touch('mtu')}
+				/>
 			</div>
 			{#if scriptsAllowed}
 				<Textarea label="PostUp" bind:value={postUp} mono rows={2} disabled={!canWrite} />
 				<Textarea label="PostDown" bind:value={postDown} mono rows={2} disabled={!canWrite} />
 			{:else if iface.post_up || iface.post_down}
 				<Alert tone="warning" title="Custom scripts are locked">
-					This interface has PostUp/PostDown scripts but WG_ALLOW_CUSTOM_SCRIPTS is off, so they cannot be edited here.
+					This interface has PostUp/PostDown scripts but WG_ALLOW_CUSTOM_SCRIPTS is off, so they cannot be
+					edited here.
 				</Alert>
 			{/if}
 			{#if canWrite}
 				<div class="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4">
 					{#if willRestart && dirty}
-						<p class="mr-auto text-[13px] text-warning">Saving restarts {iface.name}; connected peers reconnect automatically.</p>
+						<p class="mr-auto text-[13px] text-warning">
+							Saving restarts {iface.name}; connected peers reconnect automatically.
+						</p>
 					{/if}
 					<Button variant="ghost" onclick={() => load(iface)} disabled={!dirty || saving}>Reset</Button>
 					<Button variant="primary" type="submit" loading={saving} disabled={!dirty}>Save changes</Button>
@@ -156,7 +218,7 @@
 				<div>
 					<dt class="text-fg-subtle">Public key</dt>
 					<dd class="mt-0.5 flex items-center gap-1">
-						<code class="min-w-0 flex-1 break-all font-mono text-[12px] text-fg">{iface.public_key}</code>
+						<code class="min-w-0 flex-1 font-mono text-[12px] break-all text-fg">{iface.public_key}</code>
 						<CopyButton text={iface.public_key} label="Copy public key" />
 					</dd>
 				</div>

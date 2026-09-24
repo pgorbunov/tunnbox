@@ -32,10 +32,8 @@
 	}: Props = $props();
 
 	const VARIANTS: Record<ButtonVariant, string> = {
-		primary:
-			'bg-accent text-accent-fg hover:bg-accent-hover border-transparent shadow-sm font-semibold',
-		secondary:
-			'bg-surface text-fg border-border hover:bg-bg-subtle hover:border-border-strong shadow-sm',
+		primary: 'bg-accent text-accent-fg hover:bg-accent-hover border-transparent shadow-sm font-semibold',
+		secondary: 'bg-surface text-fg border-border hover:bg-bg-subtle hover:border-border-strong shadow-sm',
 		outline: 'bg-transparent text-fg border-border-strong hover:bg-bg-subtle',
 		ghost: 'bg-transparent text-fg-muted border-transparent hover:bg-bg-subtle hover:text-fg',
 		danger: 'bg-danger text-white border-transparent hover:opacity-90 shadow-sm font-semibold',
@@ -60,7 +58,13 @@
 </script>
 
 {#if href}
-	<a {href} {target} rel={target === '_blank' ? 'noopener noreferrer' : undefined} class={classes} aria-disabled={disabled || undefined}>
+	<a
+		{href}
+		{target}
+		rel={target === '_blank' ? 'noopener noreferrer' : undefined}
+		class={classes}
+		aria-disabled={disabled || undefined}
+	>
 		{@render children()}
 	</a>
 {:else}

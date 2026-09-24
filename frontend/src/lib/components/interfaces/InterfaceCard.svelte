@@ -16,13 +16,19 @@
 	const href = $derived(`/interfaces/${encodeURIComponent(iface.name)}`);
 </script>
 
-<article class="group relative flex flex-col gap-4 rounded-lg border border-border bg-surface p-4 shadow-sm transition-colors hover:border-border-strong">
+<article
+	class="group relative flex min-w-0 flex-col gap-4 rounded-lg border border-border bg-surface p-4 shadow-sm transition-colors hover:border-border-strong"
+>
 	<div class="flex items-start justify-between gap-3">
 		<div class="min-w-0">
 			<h3 class="truncate font-mono text-base font-semibold text-fg">
-				<a {href} class="after:absolute after:inset-0 after:content-[''] focus-visible:outline-none">{iface.name}</a>
+				<a {href} class="after:absolute after:inset-0 after:content-[''] focus-visible:outline-none"
+					>{iface.name}</a
+				>
 			</h3>
-			<p class="mt-0.5 truncate font-mono text-[12px] text-fg-muted">{iface.address} · :{iface.listen_port}</p>
+			<p class="mt-0.5 truncate font-mono text-[12px] text-fg-muted">
+				{iface.address} · :{iface.listen_port}
+			</p>
 		</div>
 		<div class="relative z-10 flex items-center gap-3">
 			<InterfaceStatusBadge {iface} size="sm" />
@@ -40,18 +46,24 @@
 	</div>
 	<dl class="grid grid-cols-3 gap-2 text-[13px]">
 		<div class="rounded-md bg-bg-subtle px-2.5 py-2">
-			<dt class="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-fg-subtle"><Users class="h-3 w-3" aria-hidden="true" />Peers</dt>
-			<dd class="tabular mt-0.5 font-semibold text-fg">
+			<dt class="flex items-center gap-1 text-[11px] font-medium tracking-wide text-fg-subtle uppercase">
+				<Users class="h-3 w-3" aria-hidden="true" />Peers
+			</dt>
+			<dd class="mt-0.5 font-semibold text-fg tabular">
 				{iface.online_peer_count}<span class="font-normal text-fg-subtle"> / {iface.peer_count}</span>
 			</dd>
 		</div>
 		<div class="rounded-md bg-bg-subtle px-2.5 py-2">
-			<dt class="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-fg-subtle"><ArrowDown class="h-3 w-3 text-chart-download" aria-hidden="true" />Down</dt>
-			<dd class="tabular mt-0.5 font-semibold text-fg">{formatBytes(iface.rx_total)}</dd>
+			<dt class="flex items-center gap-1 text-[11px] font-medium tracking-wide text-fg-subtle uppercase">
+				<ArrowDown class="h-3 w-3 text-chart-download" aria-hidden="true" />Down
+			</dt>
+			<dd class="mt-0.5 font-semibold text-fg tabular">{formatBytes(iface.rx_total)}</dd>
 		</div>
 		<div class="rounded-md bg-bg-subtle px-2.5 py-2">
-			<dt class="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-fg-subtle"><ArrowUp class="h-3 w-3 text-chart-upload" aria-hidden="true" />Up</dt>
-			<dd class="tabular mt-0.5 font-semibold text-fg">{formatBytes(iface.tx_total)}</dd>
+			<dt class="flex items-center gap-1 text-[11px] font-medium tracking-wide text-fg-subtle uppercase">
+				<ArrowUp class="h-3 w-3 text-chart-upload" aria-hidden="true" />Up
+			</dt>
+			<dd class="mt-0.5 font-semibold text-fg tabular">{formatBytes(iface.tx_total)}</dd>
 		</div>
 	</dl>
 </article>

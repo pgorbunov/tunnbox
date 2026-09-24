@@ -32,7 +32,11 @@
 		onchange?.(checked);
 	}
 
-	const dims = $derived(size === 'sm' ? { track: 'h-5 w-9', knob: 'h-4 w-4', shift: 'translate-x-4' } : { track: 'h-6 w-11', knob: 'h-5 w-5', shift: 'translate-x-5' });
+	const dims = $derived(
+		size === 'sm'
+			? { track: 'h-5 w-9', knob: 'h-4 w-4', shift: 'translate-x-4' }
+			: { track: 'h-6 w-11', knob: 'h-5 w-5', shift: 'translate-x-5' }
+	);
 </script>
 
 <div class="flex items-start gap-3">
@@ -56,7 +60,9 @@
 	</button>
 	{#if !hideLabel}
 		<div class="min-w-0">
-			<label id={`${id}-label`} for={id} class="block cursor-pointer text-sm font-medium text-fg">{label}</label>
+			<label id={`${id}-label`} for={id} class="block cursor-pointer text-sm font-medium text-fg"
+				>{label}</label
+			>
 			{#if description}
 				<p class="text-[13px] text-fg-subtle">{description}</p>
 			{/if}

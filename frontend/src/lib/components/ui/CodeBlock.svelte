@@ -13,11 +13,11 @@
 </script>
 
 <div class={`relative rounded-md border border-border bg-bg-subtle ${className}`}>
-	<div class="absolute right-1.5 top-1.5 z-10">
+	<div class="absolute top-1.5 right-1.5 z-10">
 		<CopyButton text={code} label={`Copy ${label.toLowerCase()}`} />
 	</div>
 	<pre
-		class="scrollbar-thin overflow-auto p-4 pr-12 font-mono text-[13px] leading-relaxed text-fg"
+		class="overflow-auto p-4 pr-12 font-mono text-[13px] leading-relaxed text-fg scrollbar-thin"
 		style={`max-height:${maxHeight}`}
 		aria-label={label}><code>{code}</code></pre>
 </div>

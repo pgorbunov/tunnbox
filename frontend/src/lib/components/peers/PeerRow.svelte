@@ -22,20 +22,35 @@
 <div class="flex items-start gap-3">
 	<div class="min-w-0 flex-1">
 		<div class="flex items-center gap-2">
-			<button type="button" class="min-w-0 truncate text-left text-sm font-medium text-fg hover:underline" onclick={() => onopen(peer)}>
+			<button
+				type="button"
+				class="min-w-0 truncate text-left text-sm font-medium text-fg hover:underline"
+				onclick={() => onopen(peer)}
+			>
 				{peer.name}
 			</button>
 			<PeerStatusBadge status={peer.status} size="sm" />
 		</div>
 		<p class="mt-0.5 truncate font-mono text-[12px] text-fg-muted">
-			{stripPrefixes(peer.allowed_ips)}{#if showInterface}<span class="text-fg-subtle"> · {peer.interface_name}</span>{/if}
+			{stripPrefixes(peer.allowed_ips)}{#if showInterface}<span class="text-fg-subtle">
+					· {peer.interface_name}</span
+				>{/if}
 		</p>
 		<div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-fg-subtle">
 			<span>Handshake {formatRelative(peer.latest_handshake_at, now)}</span>
-			<span class="tabular inline-flex items-center gap-0.5"><ArrowDown class="h-3 w-3 text-chart-download" aria-hidden="true" /><span class="sr-only">Download</span>{formatBytes(peer.rx_total)}</span>
-			<span class="tabular inline-flex items-center gap-0.5"><ArrowUp class="h-3 w-3 text-chart-upload" aria-hidden="true" /><span class="sr-only">Upload</span>{formatBytes(peer.tx_total)}</span>
+			<span class="inline-flex items-center gap-0.5 tabular"
+				><ArrowDown class="h-3 w-3 text-chart-download" aria-hidden="true" /><span class="sr-only"
+					>Download</span
+				>{formatBytes(peer.rx_total)}</span
+			>
+			<span class="inline-flex items-center gap-0.5 tabular"
+				><ArrowUp class="h-3 w-3 text-chart-upload" aria-hidden="true" /><span class="sr-only">Upload</span
+				>{formatBytes(peer.tx_total)}</span
+			>
 			{#if peer.expires_at}
-				<span class={peer.status === 'expired' ? 'text-danger' : ''}>Expires {formatRelative(peer.expires_at, now)}</span>
+				<span class={peer.status === 'expired' ? 'text-danger' : ''}
+					>Expires {formatRelative(peer.expires_at, now)}</span
+				>
 			{/if}
 		</div>
 	</div>

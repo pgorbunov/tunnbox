@@ -25,7 +25,14 @@
 		onchange?: (value: T) => void;
 	}
 
-	let { tabs, value = $bindable(), label, idPrefix = 'tab', variant = 'underline', onchange }: Props = $props();
+	let {
+		tabs,
+		value = $bindable(),
+		label,
+		idPrefix = 'tab',
+		variant = 'underline',
+		onchange
+	}: Props = $props();
 
 	const visible = $derived(tabs.filter((t) => !t.hidden));
 	let buttons: (HTMLButtonElement | null)[] = $state([]);
@@ -53,7 +60,7 @@
 <div
 	role="tablist"
 	aria-label={label}
-	class={`scrollbar-thin flex overflow-x-auto ${variant === 'underline' ? 'gap-1 border-b border-border' : 'gap-1 rounded-md bg-bg-subtle p-1'}`}
+	class={`flex overflow-x-auto scrollbar-thin ${variant === 'underline' ? 'gap-1 border-b border-border' : 'gap-1 rounded-md bg-bg-subtle p-1'}`}
 >
 	{#each visible as tab, i (tab.id)}
 		{@const active = tab.id === value}
@@ -67,7 +74,7 @@
 			bind:this={buttons[i]}
 			onclick={() => select(tab.id)}
 			onkeydown={(e) => onkeydown(e, i)}
-			class={`inline-flex shrink-0 items-center gap-2 whitespace-nowrap text-sm font-medium transition-colors duration-150
+			class={`inline-flex shrink-0 items-center gap-2 text-sm font-medium whitespace-nowrap transition-colors duration-150
 				${
 					variant === 'underline'
 						? `-mb-px h-10 border-b-2 px-3 ${active ? 'border-accent text-fg' : 'border-transparent text-fg-muted hover:border-border-strong hover:text-fg'}`
@@ -80,7 +87,10 @@
 			{/if}
 			{tab.label}
 			{#if tab.count !== undefined && tab.count !== null}
-				<span class={`tabular rounded-full px-1.5 text-[11px] ${active ? 'bg-accent-soft text-accent' : 'bg-bg-subtle text-fg-subtle'}`}>{tab.count}</span>
+				<span
+					class={`rounded-full px-1.5 text-[11px] tabular ${active ? 'bg-accent-soft text-accent' : 'bg-bg-subtle text-fg-subtle'}`}
+					>{tab.count}</span
+				>
 			{/if}
 		</button>
 	{/each}

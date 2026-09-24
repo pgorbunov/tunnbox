@@ -18,7 +18,10 @@
 
 <div class="flex min-h-[60vh] flex-col items-center justify-center px-4 text-center">
 	<Logo size={36} class="mb-8" />
-	<div class="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-bg-subtle text-fg-subtle" aria-hidden="true">
+	<div
+		class="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-bg-subtle text-fg-subtle"
+		aria-hidden="true"
+	>
 		<Compass class="h-6 w-6" />
 	</div>
 	<p class="font-mono text-sm text-fg-subtle">{page.status}</p>

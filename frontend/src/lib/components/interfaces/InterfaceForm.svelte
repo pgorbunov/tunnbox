@@ -4,6 +4,7 @@
 	 * free name (wg0, wg1, …), subnet (10.<n>.0.1/24) and port (51820+).
 	 */
 	import { Check, ChevronLeft, ChevronRight } from 'lucide-svelte';
+	import { untrack } from 'svelte';
 	import { api, toApiError } from '$lib/api';
 	import type { Interface, InterfaceCreateRequest } from '$lib/api/types';
 	import { settingsStore } from '$lib/stores/settings.svelte';
@@ -55,7 +56,9 @@
 		let n = 0;
 		while (names.has(`wg${n}`)) n++;
 		name = `wg${n}`;
-		const used = new Set(existing.flatMap((i) => splitList(i.address).map((a) => a.split('.').slice(0, 2).join('.'))));
+		const used = new Set(
+			existing.flatMap((i) => splitList(i.address).map((a) => a.split('.').slice(0, 2).join('.')))
+		);
 		let octet = 8;
 		while (used.has(`10.${octet}`)) octet++;
 		address = `10.${octet}.0.1/24`;
@@ -76,13 +79,19 @@
 	}
 
 	$effect(() => {
-		if (open) suggest();
+		if (open) untrack(suggest);
 	});
 
 	const errors = $derived({
-		name: validateInterfaceName(name) ?? (existing.some((i) => i.name === name.trim()) ? 'An interface with this name already exists' : null),
+		name:
+			validateInterfaceName(name) ??
+			(existing.some((i) => i.name === name.trim()) ? 'An interface with this name already exists' : null),
 		address: validateInterfaceAddress(address),
-		port: validatePort(port) ?? (existing.some((i) => String(i.listen_port) === port.trim()) ? 'This port is already used by another interface' : null),
+		port:
+			validatePort(port) ??
+			(existing.some((i) => String(i.listen_port) === port.trim())
+				? 'This port is already used by another interface'
+				: null),
 		dns: validateDnsList(dns),
 		endpoint: validateEndpoint(endpoint, { allowEmpty: true }),
 		mtu: validateMtu(mtu)
@@ -167,7 +176,16 @@
 		{/if}
 
 		{#if step === 0}
-			<Input label="Name" bind:value={name} mono required autocomplete="off" hint="1–15 characters, e.g. wg0" error={show('name')} onblur={() => touch('name')} />
+			<Input
+				label="Name"
+				bind:value={name}
+				mono
+				required
+				autocomplete="off"
+				hint="1–15 characters, e.g. wg0"
+				error={show('name')}
+				onblur={() => touch('name')}
+			/>
 			<Input
 				label="Address"
 				bind:value={address}
@@ -177,9 +195,27 @@
 				error={show('address')}
 				onblur={() => touch('address')}
 			/>
-			<Input label="Listen port" bind:value={port} type="number" inputmode="numeric" min="1" max="65535" required hint="UDP port to open on your firewall." error={show('port')} onblur={() => touch('port')} />
+			<Input
+				label="Listen port"
+				bind:value={port}
+				type="number"
+				inputmode="numeric"
+				min="1"
+				max="65535"
+				required
+				hint="UDP port to open on your firewall."
+				error={show('port')}
+				onblur={() => touch('port')}
+			/>
 		{:else if step === 1}
-			<Input label="DNS for clients" bind:value={dns} mono hint="Comma-separated. Leave empty to use the global default." error={show('dns')} onblur={() => touch('dns')} />
+			<Input
+				label="DNS for clients"
+				bind:value={dns}
+				mono
+				hint="Comma-separated. Leave empty to use the global default."
+				error={show('dns')}
+				onblur={() => touch('dns')}
+			/>
 			<Input
 				label="Public endpoint override"
 				bind:value={endpoint}
@@ -192,12 +228,37 @@
 			<Switch bind:checked={advanced} label="Advanced options" size="sm" />
 			{#if advanced}
 				<div class="flex flex-col gap-4 rounded-md border border-border bg-bg-subtle/50 p-4">
-					<Input label="MTU" bind:value={mtu} type="number" inputmode="numeric" min="1280" max="1500" placeholder="1420" hint="Leave empty for the default." error={show('mtu')} onblur={() => touch('mtu')} />
+					<Input
+						label="MTU"
+						bind:value={mtu}
+						type="number"
+						inputmode="numeric"
+						min="1280"
+						max="1500"
+						placeholder="1420"
+						hint="Leave empty for the default."
+						error={show('mtu')}
+						onblur={() => touch('mtu')}
+					/>
 					{#if scriptsAllowed}
-						<Textarea label="PostUp" bind:value={postUp} mono rows={2} placeholder="iptables -A FORWARD -i %i -j ACCEPT; …" />
-						<Textarea label="PostDown" bind:value={postDown} mono rows={2} placeholder="iptables -D FORWARD -i %i -j ACCEPT; …" />
+						<Textarea
+							label="PostUp"
+							bind:value={postUp}
+							mono
+							rows={2}
+							placeholder="iptables -A FORWARD -i %i -j ACCEPT; …"
+						/>
+						<Textarea
+							label="PostDown"
+							bind:value={postDown}
+							mono
+							rows={2}
+							placeholder="iptables -D FORWARD -i %i -j ACCEPT; …"
+						/>
 					{:else}
-						<p class="text-[13px] text-fg-subtle">PostUp/PostDown scripts are disabled on this server (WG_ALLOW_CUSTOM_SCRIPTS).</p>
+						<p class="text-[13px] text-fg-subtle">
+							PostUp/PostDown scripts are disabled on this server (WG_ALLOW_CUSTOM_SCRIPTS).
+						</p>
 					{/if}
 				</div>
 			{/if}
@@ -213,13 +274,17 @@
 				<dt class="text-fg-subtle">DNS</dt>
 				<dd class="font-mono text-fg">{dns || 'Global default'}</dd>
 				<dt class="text-fg-subtle">Endpoint</dt>
-				<dd class="font-mono text-fg">{endpoint || settingsStore.server?.public_endpoint || 'Global default'}</dd>
+				<dd class="font-mono text-fg">
+					{endpoint || settingsStore.server?.public_endpoint || 'Global default'}
+				</dd>
 				<dt class="text-fg-subtle">MTU</dt>
 				<dd class="font-mono text-fg">{mtu || 'Default'}</dd>
 				<dt class="text-fg-subtle">State</dt>
 				<dd class="text-fg">{enabled ? 'Up after creation' : 'Created down'}</dd>
 			</dl>
-			<Alert tone="info">A key pair is generated for the interface. Remember to open UDP port {port} on your firewall.</Alert>
+			<Alert tone="info"
+				>A key pair is generated for the interface. Remember to open UDP port {port} on your firewall.</Alert
+			>
 		{/if}
 	</form>
 
@@ -237,7 +302,9 @@
 				<ChevronRight class="h-4 w-4" aria-hidden="true" />
 			</Button>
 		{:else}
-			<Button variant="primary" type="submit" form="interface-form" loading={submitting}>Create interface</Button>
+			<Button variant="primary" type="submit" form="interface-form" loading={submitting}
+				>Create interface</Button
+			>
 		{/if}
 	{/snippet}
 </Dialog>

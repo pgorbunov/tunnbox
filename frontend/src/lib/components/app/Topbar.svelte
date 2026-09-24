@@ -1,6 +1,16 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { ChevronRight, LogOut, Menu, Monitor, Moon, Search, ShieldCheck, Sun, User as UserIcon } from 'lucide-svelte';
+	import {
+		ChevronRight,
+		LogOut,
+		Menu,
+		Monitor,
+		Moon,
+		Search,
+		ShieldCheck,
+		Sun,
+		User as UserIcon
+	} from 'lucide-svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { themeStore } from '$lib/stores/theme.svelte';
 	import DropdownMenu, { type MenuItem } from '$lib/components/ui/DropdownMenu.svelte';
@@ -45,10 +55,14 @@
 		{ label: 'Sign out', icon: LogOut, separator: true, onselect: () => void auth.logout() }
 	]);
 
-	const ThemeIcon = $derived(themeStore.theme === 'system' ? Monitor : themeStore.resolved === 'dark' ? Moon : Sun);
+	const ThemeIcon = $derived(
+		themeStore.theme === 'system' ? Monitor : themeStore.resolved === 'dark' ? Moon : Sun
+	);
 </script>
 
-<header class="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-border bg-bg/85 px-3 backdrop-blur sm:px-5">
+<header
+	class="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-border bg-bg/85 px-3 backdrop-blur sm:px-5"
+>
 	<IconButton label="Open navigation" class="md:hidden" onclick={onopenmenu}>
 		<Menu class="h-5 w-5" />
 	</IconButton>
@@ -61,7 +75,10 @@
 						<ChevronRight class="h-4 w-4 shrink-0 text-fg-subtle" aria-hidden="true" />
 					{/if}
 					{#if i === crumbs.length - 1}
-						<span class={`truncate font-medium text-fg ${i > 0 ? 'font-mono text-[13px]' : ''}`} aria-current="page">{c.label}</span>
+						<span
+							class={`truncate font-medium text-fg ${i > 0 ? 'font-mono text-[13px]' : ''}`}
+							aria-current="page">{c.label}</span
+						>
 					{:else}
 						<a href={c.href} class="truncate text-fg-muted hover:text-fg">{c.label}</a>
 					{/if}
@@ -106,8 +123,12 @@
 					<span class="flex h-7 w-7 items-center justify-center rounded-full bg-accent-soft text-accent">
 						<UserIcon class="h-4 w-4" aria-hidden="true" />
 					</span>
-					<span class="hidden max-w-[10rem] truncate font-medium text-fg sm:inline">{auth.user?.username}</span>
-					<span class="hidden text-[11px] uppercase tracking-wide text-fg-subtle lg:inline">{auth.user?.role}</span>
+					<span class="hidden max-w-[10rem] truncate font-medium text-fg sm:inline"
+						>{auth.user?.username}</span
+					>
+					<span class="hidden text-[11px] tracking-wide text-fg-subtle uppercase lg:inline"
+						>{auth.user?.role}</span
+					>
 				</button>
 			{/snippet}
 		</DropdownMenu>

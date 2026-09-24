@@ -41,7 +41,10 @@
 		<span class="pointer-events-none relative hidden text-accent-fg peer-checked:block" aria-hidden="true">
 			<Check class="h-3.5 w-3.5" strokeWidth={3} />
 		</span>
-		<span class="pointer-events-none relative hidden text-accent-fg peer-indeterminate:block" aria-hidden="true">
+		<span
+			class="pointer-events-none relative hidden text-accent-fg peer-indeterminate:block"
+			aria-hidden="true"
+		>
 			<Minus class="h-3.5 w-3.5" strokeWidth={3} />
 		</span>
 	</span>

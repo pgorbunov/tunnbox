@@ -16,7 +16,14 @@
 		successMessage?: string;
 	}
 
-	let { text, label = 'Copy', variant = 'icon', size = 'sm', buttonVariant = 'secondary', successMessage }: Props = $props();
+	let {
+		text,
+		label = 'Copy',
+		variant = 'icon',
+		size = 'sm',
+		buttonVariant = 'secondary',
+		successMessage
+	}: Props = $props();
 
 	let copied = $state(false);
 	let timer: ReturnType<typeof setTimeout> | null = null;

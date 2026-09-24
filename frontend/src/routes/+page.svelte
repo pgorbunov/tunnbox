@@ -55,7 +55,9 @@
 			toast.success(`${updated.name} is ${updated.is_active ? 'up' : 'down'}`);
 		} catch (err) {
 			interfaces = prev;
-			toast.error(`Could not bring ${iface.name} ${up ? 'up' : 'down'}`, { description: toApiError(err).detail });
+			toast.error(`Could not bring ${iface.name} ${up ? 'up' : 'down'}`, {
+				description: toApiError(err).detail
+			});
 		} finally {
 			toggling = null;
 		}
@@ -86,29 +88,70 @@
 	<ErrorState message={poller.error.detail} onretry={() => poller.refresh()} retrying={poller.refreshing} />
 {:else}
 	<div class="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-6">
-		<Stat label="Interfaces" value={overview?.interfaces_active} suffix={overview ? `/ ${overview.interfaces_total} up` : undefined} {loading} href="/interfaces">
+		<Stat
+			label="Interfaces"
+			value={overview?.interfaces_active}
+			suffix={overview ? `/ ${overview.interfaces_total} up` : undefined}
+			{loading}
+			href="/interfaces"
+		>
 			{#snippet icon()}<Network class="h-4 w-4" />{/snippet}
 		</Stat>
-		<Stat label="Peers online" value={overview?.peers_online} suffix={overview ? `/ ${overview.peers_total}` : undefined} tone="success" {loading} href="/peers?status=online">
+		<Stat
+			label="Peers online"
+			value={overview?.peers_online}
+			suffix={overview ? `/ ${overview.peers_total}` : undefined}
+			tone="success"
+			{loading}
+			href="/peers?status=online"
+		>
 			{#snippet icon()}<Users class="h-4 w-4" />{/snippet}
 		</Stat>
-		<Stat label="Disabled" value={overview?.peers_disabled} tone="warning" {loading} href="/peers?status=disabled">
+		<Stat
+			label="Disabled"
+			value={overview?.peers_disabled}
+			tone="warning"
+			{loading}
+			href="/peers?status=disabled"
+		>
 			{#snippet icon()}<UserX class="h-4 w-4" />{/snippet}
 		</Stat>
-		<Stat label="Expiring in 7 days" value={overview?.peers_expiring_7d} tone={overview && overview.peers_expiring_7d > 0 ? 'danger' : 'default'} {loading}>
+		<Stat
+			label="Expiring in 7 days"
+			value={overview?.peers_expiring_7d}
+			tone={overview && overview.peers_expiring_7d > 0 ? 'danger' : 'default'}
+			{loading}
+		>
 			{#snippet icon()}<Clock class="h-4 w-4" />{/snippet}
 		</Stat>
-		<Stat label="Download" value={overview ? formatBytes(overview.rx_total) : null} hint={`Last ${range}`} tone="download" {loading}>
+		<Stat
+			label="Download"
+			value={overview ? formatBytes(overview.rx_total) : null}
+			hint={`Last ${range}`}
+			tone="download"
+			{loading}
+		>
 			{#snippet icon()}<ArrowDown class="h-4 w-4" />{/snippet}
 		</Stat>
-		<Stat label="Upload" value={overview ? formatBytes(overview.tx_total) : null} hint={`Last ${range}`} tone="upload" {loading}>
+		<Stat
+			label="Upload"
+			value={overview ? formatBytes(overview.tx_total) : null}
+			hint={`Last ${range}`}
+			tone="upload"
+			{loading}
+		>
 			{#snippet icon()}<ArrowUp class="h-4 w-4" />{/snippet}
 		</Stat>
 	</div>
 
 	<div class="mt-6 grid gap-6 xl:grid-cols-3">
 		<Card title="Traffic" description={`All interfaces · last ${range}`} class="xl:col-span-2">
-			<AreaChart points={overview?.series ?? []} title="Traffic across all interfaces" loading={loading} refreshing={poller.refreshing && !!overview} />
+			<AreaChart
+				points={overview?.series ?? []}
+				title="Traffic across all interfaces"
+				{loading}
+				refreshing={poller.refreshing && !!overview}
+			/>
 		</Card>
 
 		<Card title="Top peers" description={`By traffic · last ${range}`} flush>
@@ -117,22 +160,36 @@
 					{#each [1, 2, 3] as i (i)}<div class="px-5 py-3"><Skeleton class="h-4 w-40" /></div>{/each}
 				</div>
 			{:else if !overview || overview.top_peers.length === 0}
-				<EmptyState compact title="No traffic yet" description="Peers appear here once they start moving data." />
+				<EmptyState
+					compact
+					title="No traffic yet"
+					description="Peers appear here once they start moving data."
+				/>
 			{:else}
 				{@const max = Math.max(1, ...overview.top_peers.map((p) => p.rx + p.tx))}
 				<ol class="divide-y divide-border">
 					{#each overview.top_peers as p (p.peer_id)}
 						<li class="px-5 py-3">
 							<div class="flex items-center justify-between gap-3 text-sm">
-								<a href={`/interfaces/${encodeURIComponent(p.interface_name)}?peer=${p.peer_id}`} class="min-w-0 truncate font-medium text-fg hover:underline">{p.name}</a>
-								<span class="tabular shrink-0 text-[13px] text-fg-muted">{formatBytes(p.rx + p.tx)}</span>
+								<a
+									href={`/interfaces/${encodeURIComponent(p.interface_name)}?peer=${p.peer_id}`}
+									class="min-w-0 truncate font-medium text-fg hover:underline">{p.name}</a
+								>
+								<span class="shrink-0 text-[13px] text-fg-muted tabular">{formatBytes(p.rx + p.tx)}</span>
 							</div>
-							<div class="mt-1.5 flex h-1.5 w-full overflow-hidden rounded-full bg-bg-subtle" aria-hidden="true">
-								<span class="h-full bg-chart-download" style={`width:${((p.rx / max) * 100).toFixed(1)}%`}></span>
-								<span class="ml-px h-full bg-chart-upload" style={`width:${((p.tx / max) * 100).toFixed(1)}%`}></span>
+							<div
+								class="mt-1.5 flex h-1.5 w-full overflow-hidden rounded-full bg-bg-subtle"
+								aria-hidden="true"
+							>
+								<span class="h-full bg-chart-download" style={`width:${((p.rx / max) * 100).toFixed(1)}%`}
+								></span>
+								<span class="ml-px h-full bg-chart-upload" style={`width:${((p.tx / max) * 100).toFixed(1)}%`}
+								></span>
 							</div>
 							<p class="mt-1 text-[12px] text-fg-subtle">
-								<span class="font-mono">{p.interface_name}</span> · <span class="sr-only">Download</span>↓ {formatBytes(p.rx)} · <span class="sr-only">Upload</span>↑ {formatBytes(p.tx)}
+								<span class="font-mono">{p.interface_name}</span> · <span class="sr-only">Download</span>↓ {formatBytes(
+									p.rx
+								)} · <span class="sr-only">Upload</span>↑ {formatBytes(p.tx)}
 							</p>
 						</li>
 					{/each}
@@ -153,14 +210,22 @@
 			{/snippet}
 			{#if loading}
 				<div class="divide-y divide-border">
-					{#each [1, 2] as i (i)}<div class="px-5 py-4"><Skeleton class="h-4 w-32" /><Skeleton class="mt-2 h-3 w-48" /></div>{/each}
+					{#each [1, 2] as i (i)}<div class="px-5 py-4">
+							<Skeleton class="h-4 w-32" /><Skeleton class="mt-2 h-3 w-48" />
+						</div>{/each}
 				</div>
 			{:else if interfaces.length === 0}
-				<EmptyState compact title="No interfaces yet" description="Create a WireGuard interface to start adding peers.">
+				<EmptyState
+					compact
+					title="No interfaces yet"
+					description="Create a WireGuard interface to start adding peers."
+				>
 					{#snippet icon()}<Network class="h-6 w-6" />{/snippet}
 					{#snippet actions()}
 						{#if canWrite}
-							<Button variant="primary" href="/interfaces?new=1"><Plus class="h-4 w-4" aria-hidden="true" />Create interface</Button>
+							<Button variant="primary" href="/interfaces?new=1"
+								><Plus class="h-4 w-4" aria-hidden="true" />Create interface</Button
+							>
 						{/if}
 					{/snippet}
 				</EmptyState>
@@ -169,9 +234,13 @@
 					{#each interfaces as iface (iface.id)}
 						<li class="flex items-center gap-4 px-5 py-3">
 							<div class="min-w-0 flex-1">
-								<a href={`/interfaces/${encodeURIComponent(iface.name)}`} class="font-mono text-sm font-semibold text-fg hover:underline">{iface.name}</a>
+								<a
+									href={`/interfaces/${encodeURIComponent(iface.name)}`}
+									class="font-mono text-sm font-semibold text-fg hover:underline">{iface.name}</a
+								>
 								<p class="mt-0.5 truncate text-[13px] text-fg-subtle">
-									<span class="font-mono">{iface.address}</span> · :{iface.listen_port} · {iface.online_peer_count}/{iface.peer_count} peers online
+									<span class="font-mono">{iface.address}</span> · :{iface.listen_port} · {iface.online_peer_count}/{iface.peer_count}
+									peers online
 								</p>
 							</div>
 							<InterfaceStatusBadge {iface} size="sm" />
@@ -209,15 +278,20 @@
 				<ol class="divide-y divide-border">
 					{#each overview.recent_activity as a (a.id)}
 						<li class="flex items-start gap-3 px-5 py-2.5 text-[13px]">
-							<span class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-fg-subtle/60" aria-hidden="true"></span>
+							<span class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-fg-subtle/60" aria-hidden="true"
+							></span>
 							<div class="min-w-0 flex-1">
 								<p class="text-fg">
 									<span class="font-medium">{a.username ?? 'system'}</span>
 									<span class="text-fg-muted"> · </span>
 									<code class="font-mono text-[12px] text-fg-muted">{a.action}</code>
-									{#if a.target}<span class="text-fg-muted"> → </span><span class="font-mono text-[12px] text-fg">{a.target}</span>{/if}
+									{#if a.target}<span class="text-fg-muted"> → </span><span
+											class="font-mono text-[12px] text-fg">{a.target}</span
+										>{/if}
 								</p>
-								<p class="text-[12px] text-fg-subtle" title={formatDateTime(a.created_at)}>{formatRelative(a.created_at, ticker.now)}</p>
+								<p class="text-[12px] text-fg-subtle" title={formatDateTime(a.created_at)}>
+									{formatRelative(a.created_at, ticker.now)}
+								</p>
 							</div>
 						</li>
 					{/each}

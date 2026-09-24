@@ -21,11 +21,36 @@
 	import Skeleton from '$lib/components/ui/Skeleton.svelte';
 	import Switch from '$lib/components/ui/Switch.svelte';
 
-	const SCOPES: { value: ApiKeyScope; label: string; description: string; minRole: 'viewer' | 'operator' | 'admin' }[] = [
-		{ value: 'read', label: 'read', description: 'Read interfaces, peers, stats and audit', minRole: 'viewer' },
-		{ value: 'peers:write', label: 'peers:write', description: 'Create, edit, enable/disable and delete peers', minRole: 'operator' },
-		{ value: 'interfaces:write', label: 'interfaces:write', description: 'Manage interfaces', minRole: 'operator' },
-		{ value: 'admin', label: 'admin', description: 'Everything, including users and settings', minRole: 'admin' }
+	const SCOPES: {
+		value: ApiKeyScope;
+		label: string;
+		description: string;
+		minRole: 'viewer' | 'operator' | 'admin';
+	}[] = [
+		{
+			value: 'read',
+			label: 'read',
+			description: 'Read interfaces, peers, stats and audit',
+			minRole: 'viewer'
+		},
+		{
+			value: 'peers:write',
+			label: 'peers:write',
+			description: 'Create, edit, enable/disable and delete peers',
+			minRole: 'operator'
+		},
+		{
+			value: 'interfaces:write',
+			label: 'interfaces:write',
+			description: 'Manage interfaces',
+			minRole: 'operator'
+		},
+		{
+			value: 'admin',
+			label: 'admin',
+			description: 'Everything, including users and settings',
+			minRole: 'admin'
+		}
 	];
 
 	let keys = $state<ApiKey[]>([]);
@@ -84,7 +109,11 @@
 		creating = true;
 		createError = null;
 		try {
-			const res = await api.apiKeys.create({ name: name.trim(), scopes: [...scopes], expires_at: expires || null });
+			const res = await api.apiKeys.create({
+				name: name.trim(),
+				scopes: [...scopes],
+				expires_at: expires || null
+			});
 			createdKey = res.key;
 			keys = [res, ...keys];
 			toast.success(`API key "${res.name}" created`);
@@ -100,7 +129,9 @@
 		revoking = true;
 		try {
 			await api.apiKeys.revoke(revokeTarget.id);
-			keys = keys.map((k) => (k.id === revokeTarget!.id ? { ...k, revoked_at: new Date().toISOString() } : k));
+			keys = keys.map((k) =>
+				k.id === revokeTarget!.id ? { ...k, revoked_at: new Date().toISOString() } : k
+			);
 			revokeOpen = false;
 			toast.success('API key revoked');
 		} catch (err) {
@@ -112,12 +143,17 @@
 
 	function status(k: ApiKey): { tone: 'neutral' | 'success' | 'danger' | 'warning'; label: string } {
 		if (k.revoked_at) return { tone: 'danger', label: 'Revoked' };
-		if (k.expires_at && new Date(k.expires_at).getTime() < Date.now()) return { tone: 'warning', label: 'Expired' };
+		if (k.expires_at && new Date(k.expires_at).getTime() < Date.now())
+			return { tone: 'warning', label: 'Expired' };
 		return { tone: 'success', label: 'Active' };
 	}
 </script>
 
-<Card title="API keys" description="Use keys for automation: send them as a Bearer token or in the X-API-Key header." flush>
+<Card
+	title="API keys"
+	description="Use keys for automation: send them as a Bearer token or in the X-API-Key header."
+	flush
+>
 	{#snippet actions()}
 		{#if isAdmin}
 			<Switch bind:checked={showAll} label="All users" size="sm" />
@@ -137,10 +173,16 @@
 	{:else if error}
 		<ErrorState compact message={error} onretry={load} />
 	{:else if keys.length === 0}
-		<EmptyState compact title="No API keys yet" description="Create a key to manage TunnBox from scripts or other tools.">
+		<EmptyState
+			compact
+			title="No API keys yet"
+			description="Create a key to manage TunnBox from scripts or other tools."
+		>
 			{#snippet icon()}<KeyRound class="h-6 w-6" />{/snippet}
 			{#snippet actions()}
-				<Button variant="primary" onclick={openCreate}><Plus class="h-4 w-4" aria-hidden="true" />New key</Button>
+				<Button variant="primary" onclick={openCreate}
+					><Plus class="h-4 w-4" aria-hidden="true" />New key</Button
+				>
 			{/snippet}
 		</EmptyState>
 	{:else}
@@ -160,7 +202,9 @@
 							{/each}
 						</p>
 						<p class="mt-1 text-[13px] text-fg-subtle">
-							Created {formatDateTime(k.created_at)} · Last used {k.last_used_at ? formatRelative(k.last_used_at) : 'never'}
+							Created {formatDateTime(k.created_at)} · Last used {k.last_used_at
+								? formatRelative(k.last_used_at)
+								: 'never'}
 							{#if k.expires_at}
 								· Expires {formatDateTime(k.expires_at)}
 							{/if}
@@ -184,13 +228,23 @@
 	{/if}
 </Card>
 
-<Dialog bind:open={createOpen} title={createdKey ? 'Copy your new API key' : 'New API key'} size="md" locked={creating}>
+<Dialog
+	bind:open={createOpen}
+	title={createdKey ? 'Copy your new API key' : 'New API key'}
+	size="md"
+	locked={creating}
+>
 	{#if createdKey}
 		<div class="flex flex-col gap-4">
-			<Alert tone="warning" title="Shown only once">Copy the key now — you will not be able to see it again.</Alert>
+			<Alert tone="warning" title="Shown only once"
+				>Copy the key now — you will not be able to see it again.</Alert
+			>
 			<CodeBlock code={createdKey} label="API key" />
 			<p class="text-[13px] text-fg-muted">
-				Example: <code class="font-mono">curl -H "Authorization: Bearer {createdKey.slice(0, 8)}…" {window.location.origin}/api/interfaces</code>
+				Example: <code class="font-mono"
+					>curl -H "Authorization: Bearer {createdKey.slice(0, 8)}…" {window.location
+						.origin}/api/interfaces</code
+				>
 			</p>
 		</div>
 	{:else}
@@ -219,7 +273,12 @@
 				{/each}
 				<p class="text-[13px] text-fg-subtle">A key can never exceed your own role.</p>
 			</fieldset>
-			<DateTimePicker label="Expires (optional)" bind:value={expires} min={new Date().toISOString()} hint="Leave empty for a key that does not expire." />
+			<DateTimePicker
+				label="Expires (optional)"
+				bind:value={expires}
+				min={new Date().toISOString()}
+				hint="Leave empty for a key that does not expire."
+			/>
 		</form>
 	{/if}
 	{#snippet footer()}
@@ -227,7 +286,13 @@
 			<Button variant="primary" onclick={() => (createOpen = false)}>Done</Button>
 		{:else}
 			<Button variant="ghost" onclick={() => (createOpen = false)} disabled={creating}>Cancel</Button>
-			<Button variant="primary" type="submit" form="apikey-form" loading={creating} disabled={!name.trim() || scopes.size === 0}>Create key</Button>
+			<Button
+				variant="primary"
+				type="submit"
+				form="apikey-form"
+				loading={creating}
+				disabled={!name.trim() || scopes.size === 0}>Create key</Button
+			>
 		{/if}
 	{/snippet}
 </Dialog>

@@ -35,7 +35,7 @@
 
 <button
 	{type}
-	class={`inline-flex items-center justify-center shrink-0 rounded-sm border transition-colors duration-150 disabled:opacity-50 disabled:pointer-events-none
+	class={`inline-flex shrink-0 items-center justify-center rounded-sm border transition-colors duration-150 disabled:pointer-events-none disabled:opacity-50
 		${size === 'sm' ? 'h-8 w-8' : 'h-10 w-10'} ${VARIANTS[variant]} ${active ? 'bg-bg-subtle text-fg' : ''} ${className}`}
 	aria-label={label}
 	title={label}

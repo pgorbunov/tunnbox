@@ -17,6 +17,7 @@
 	let error = $state<string | null>(null);
 	let lockedUntil = $state<number | null>(null);
 	let codeInput = $state<HTMLInputElement | null>(null);
+	let lastAutoCode = '';
 
 	function describe(err: unknown): string {
 		const e = toApiError(err);
@@ -26,7 +27,10 @@
 				const s = e.retryAfter ?? 60;
 				return `Too many attempts. Please wait ${s >= 60 ? `${Math.ceil(s / 60)} min` : `${s}s`} and try again.`;
 			}
-			if (e.status === 401 || e.status === 400) return mfaToken ? 'That code is not valid. Check your authenticator and try again.' : 'Incorrect username or password.';
+			if (e.status === 401 || e.status === 400)
+				return mfaToken
+					? 'That code is not valid. Check your authenticator and try again.'
+					: 'Incorrect username or password.';
 			if (e.isNetwork) return e.detail;
 			return e.detail;
 		}
@@ -78,13 +82,18 @@
 
 	// Auto-submit when a full 6-digit TOTP code is typed or pasted.
 	$effect(() => {
-		if (mfaToken && isTotpCode(code) && !submitting) void submitCode();
+		const c = code.trim();
+		if (mfaToken && isTotpCode(c) && c !== lastAutoCode) {
+			lastAutoCode = c;
+			void submitCode();
+		}
 	});
 
 	function oncodeinput() {
 		// Normalise recovery-code paste like "abcd efgh" -> "abcd-efgh".
 		const v = code.trim();
-		if (/^[a-zA-Z0-9]{4}[\s-]?[a-zA-Z0-9]{4}$/.test(v) && !/^\d{6,}$/.test(v)) code = `${v.slice(0, 4)}-${v.slice(-4)}`;
+		if (/^[a-zA-Z0-9]{4}[\s-]?[a-zA-Z0-9]{4}$/.test(v) && !/^\d{6,}$/.test(v))
+			code = `${v.slice(0, 4)}-${v.slice(-4)}`;
 	}
 </script>
 
@@ -152,8 +161,21 @@
 					{#if error}
 						<Alert tone={lockedUntil ? 'warning' : 'danger'}>{error}</Alert>
 					{/if}
-					<Input label="Username" bind:value={username} autocomplete="username" required autocapitalize="off" spellcheck={false} />
-					<Input label="Password" type="password" bind:value={password} autocomplete="current-password" required />
+					<Input
+						label="Username"
+						bind:value={username}
+						autocomplete="username"
+						required
+						autocapitalize="off"
+						spellcheck={false}
+					/>
+					<Input
+						label="Password"
+						type="password"
+						bind:value={password}
+						autocomplete="current-password"
+						required
+					/>
 					<Button variant="primary" type="submit" block size="lg" loading={submitting}>
 						<LogIn class="h-4 w-4" aria-hidden="true" />
 						Sign in

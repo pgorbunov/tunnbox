@@ -18,8 +18,17 @@
 		footer?: Snippet;
 	}
 
-	let { open = $bindable(false), title, description, side = 'right', width = 'md', onclose, children, actions, footer }: Props =
-		$props();
+	let {
+		open = $bindable(false),
+		title,
+		description,
+		side = 'right',
+		width = 'md',
+		onclose,
+		children,
+		actions,
+		footer
+	}: Props = $props();
 
 	const id = uid('drawer');
 	let el: HTMLDialogElement | null = $state(null);
@@ -90,11 +99,13 @@
 						</IconButton>
 					</div>
 				</header>
-				<div class="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-5 py-4">
+				<div class="min-h-0 flex-1 overflow-y-auto px-5 py-4 scrollbar-thin">
 					{@render children()}
 				</div>
 				{#if footer}
-					<footer class="flex flex-wrap items-center justify-end gap-2 border-t border-border bg-bg-subtle/60 px-5 py-3">
+					<footer
+						class="flex flex-wrap items-center justify-end gap-2 border-t border-border bg-bg-subtle/60 px-5 py-3"
+					>
 						{@render footer()}
 					</footer>
 				{/if}

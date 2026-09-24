@@ -13,7 +13,12 @@
 	const r = $derived((size - stroke) / 2);
 	const c = $derived(2 * Math.PI * r);
 	const clamped = $derived(Math.min(1, Math.max(0, value)));
-	const TONES = { accent: 'text-accent', success: 'text-success', warning: 'text-warning', danger: 'text-danger' } as const;
+	const TONES = {
+		accent: 'text-accent',
+		success: 'text-success',
+		warning: 'text-warning',
+		danger: 'text-danger'
+	} as const;
 </script>
 
 <svg

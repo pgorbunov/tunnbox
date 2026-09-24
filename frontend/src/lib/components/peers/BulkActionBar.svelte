@@ -20,16 +20,32 @@
 		role="toolbar"
 		aria-label="Bulk actions"
 	>
-		<span class="tabular pr-1 text-sm font-medium text-fg">{count} selected</span>
-		<Button size="sm" onclick={() => onaction('enable')} loading={loading === 'enable'} disabled={loading !== null}>
+		<span class="pr-1 text-sm font-medium text-fg tabular">{count} selected</span>
+		<Button
+			size="sm"
+			onclick={() => onaction('enable')}
+			loading={loading === 'enable'}
+			disabled={loading !== null}
+		>
 			<Power class="h-4 w-4" aria-hidden="true" />
 			Enable
 		</Button>
-		<Button size="sm" onclick={() => onaction('disable')} loading={loading === 'disable'} disabled={loading !== null}>
+		<Button
+			size="sm"
+			onclick={() => onaction('disable')}
+			loading={loading === 'disable'}
+			disabled={loading !== null}
+		>
 			<PowerOff class="h-4 w-4" aria-hidden="true" />
 			Disable
 		</Button>
-		<Button size="sm" variant="danger-soft" onclick={() => onaction('delete')} loading={loading === 'delete'} disabled={loading !== null}>
+		<Button
+			size="sm"
+			variant="danger-soft"
+			onclick={() => onaction('delete')}
+			loading={loading === 'delete'}
+			disabled={loading !== null}
+		>
 			<Trash2 class="h-4 w-4" aria-hidden="true" />
 			Delete
 		</Button>

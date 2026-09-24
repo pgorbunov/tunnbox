@@ -14,9 +14,14 @@
 	let { title, description, icon, actions, compact = false, class: className = '' }: Props = $props();
 </script>
 
-<div class={`flex flex-col items-center justify-center text-center ${compact ? 'px-4 py-8' : 'px-6 py-14'} ${className}`}>
+<div
+	class={`flex flex-col items-center justify-center text-center ${compact ? 'px-4 py-8' : 'px-6 py-14'} ${className}`}
+>
 	{#if icon}
-		<div class="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-bg-subtle text-fg-subtle" aria-hidden="true">
+		<div
+			class="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-bg-subtle text-fg-subtle"
+			aria-hidden="true"
+		>
 			{@render icon()}
 		</div>
 	{/if}

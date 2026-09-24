@@ -122,7 +122,9 @@
 			onupdated(updated);
 			toast.success(`${updated.name} ${updated.enabled ? 'enabled' : 'disabled'}`);
 		} catch (err) {
-			toast.error(`Could not ${peer.enabled ? 'disable' : 'enable'} ${peer.name}`, { description: toApiError(err).detail });
+			toast.error(`Could not ${peer.enabled ? 'disable' : 'enable'} ${peer.name}`, {
+				description: toApiError(err).detail
+			});
 		}
 	}
 
@@ -183,7 +185,9 @@
 			const updated = await api.peers.rotateKeys(rotatePeer.id);
 			onupdated(updated);
 			rotateOpen = false;
-			toast.success(`Keys rotated for ${updated.name}`, { description: 'The previous client configuration no longer works.' });
+			toast.success(`Keys rotated for ${updated.name}`, {
+				description: 'The previous client configuration no longer works.'
+			});
 			onboardPeer = updated;
 			onboardTab = 'qr';
 			onboardJustCreated = false;
@@ -204,7 +208,9 @@
 		bulkLoading = action;
 		try {
 			const res = await api.peers.bulk({ ids, action });
-			toast.success(`${res.affected} ${res.affected === 1 ? 'peer' : 'peers'} ${action === 'delete' ? 'deleted' : `${action}d`}`);
+			toast.success(
+				`${res.affected} ${res.affected === 1 ? 'peer' : 'peers'} ${action === 'delete' ? 'deleted' : `${action}d`}`
+			);
 			if (action === 'delete') ondeleted(ids);
 			selected.clear();
 			bulkDeleteOpen = false;
@@ -247,7 +253,12 @@
 />
 
 {#if canWrite}
-	<BulkActionBar count={selected.size} loading={bulkLoading} onaction={(a) => void runBulk(a)} onclear={() => selected.clear()} />
+	<BulkActionBar
+		count={selected.size}
+		loading={bulkLoading}
+		onaction={(a) => void runBulk(a)}
+		onclear={() => selected.clear()}
+	/>
 {/if}
 
 <PeerDrawer bind:open={drawerOpen} peer={drawerPeer} {canWrite} onaction={handleAction} />

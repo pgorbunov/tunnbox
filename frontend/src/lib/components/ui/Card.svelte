@@ -15,11 +15,24 @@
 		footer?: Snippet;
 	}
 
-	let { title, description, actions, flush = false, as = 'section', class: className = '', id, children, footer }: Props =
-		$props();
+	let {
+		title,
+		description,
+		actions,
+		flush = false,
+		as = 'section',
+		class: className = '',
+		id,
+		children,
+		footer
+	}: Props = $props();
 </script>
 
-<svelte:element this={as} {id} class={`rounded-lg border border-border bg-surface shadow-sm ${className}`}>
+<svelte:element
+	this={as}
+	{id}
+	class={`min-w-0 rounded-lg border border-border bg-surface shadow-sm ${className}`}
+>
 	{#if title || actions}
 		<header class="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
 			<div class="min-w-0">

@@ -36,21 +36,23 @@
 
 <div class="flex flex-col gap-4">
 	<p class="text-sm text-fg-muted">
-		A share link lets someone fetch this peer's configuration once, without signing in. Anyone with the link can use it until it
-		expires or its uses run out.
+		A share link lets someone fetch this peer's configuration once, without signing in. Anyone with the link
+		can use it until it expires or its uses run out.
 	</p>
 	{#if error}
 		<Alert tone="danger">{error}</Alert>
 	{/if}
 	{#if link}
 		<div class="rounded-md border border-border bg-bg-subtle p-3">
-			<p class="mb-1.5 text-xs font-medium uppercase tracking-wide text-fg-subtle">Share link</p>
+			<p class="mb-1.5 text-xs font-medium tracking-wide text-fg-subtle uppercase">Share link</p>
 			<div class="flex items-center gap-2">
 				<code class="min-w-0 flex-1 truncate font-mono text-[13px] text-fg">{url}</code>
 				<CopyButton text={url} label="Copy link" />
 			</div>
 			<p class="mt-2 text-[13px] text-fg-subtle">
-				Expires {formatDateTime(link.expires_at)} · {link.max_uses === 1 ? 'one-time use' : `${link.max_uses} uses`}
+				Expires {formatDateTime(link.expires_at)} · {link.max_uses === 1
+					? 'one-time use'
+					: `${link.max_uses} uses`}
 			</p>
 		</div>
 		<div class="flex gap-2">

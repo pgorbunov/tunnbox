@@ -5,9 +5,30 @@
 	 */
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { Activity, ArrowDown, ArrowUp, Download, MoreHorizontal, Plus, Search, Settings2, Trash2, Users, Wifi } from 'lucide-svelte';
+	import {
+		Activity,
+		ArrowDown,
+		ArrowUp,
+		Download,
+		MoreHorizontal,
+		Plus,
+		Search,
+		Settings2,
+		Trash2,
+		Users,
+		Wifi
+	} from 'lucide-svelte';
 	import { api, toApiError } from '$lib/api';
-	import type { AuditEntry, Interface, Peer, PeerSort, PeerStatus, SortOrder, StatsRange, StatsResponse } from '$lib/api/types';
+	import type {
+		AuditEntry,
+		Interface,
+		Peer,
+		PeerSort,
+		PeerStatus,
+		SortOrder,
+		StatsRange,
+		StatsResponse
+	} from '$lib/api/types';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { liveStatus } from '$lib/stores/live.svelte';
 	import { settingsStore } from '$lib/stores/settings.svelte';
@@ -69,7 +90,16 @@
 			try {
 				const [i, p, s] = await Promise.all([
 					api.interfaces.get(n, signal),
-					api.interfaces.peers(n, { q: query.trim() || undefined, status: statusFilter || undefined, sort: sortKey, order: sortOrder }, signal),
+					api.interfaces.peers(
+						n,
+						{
+							q: query.trim() || undefined,
+							status: statusFilter || undefined,
+							sort: sortKey,
+							order: sortOrder
+						},
+						signal
+					),
 					api.interfaces.stats(n, range, signal)
 				]);
 				iface = i;
@@ -105,7 +135,8 @@
 		const peerId = Number(sp.get('peer'));
 		if (wantsNew && canWrite) createOpen = true;
 		if (peerId) focusPeerId = peerId;
-		if (wantsNew || peerId) void goto(`/interfaces/${encodeURIComponent(name)}`, { replaceState: true, noScroll: true });
+		if (wantsNew || peerId)
+			void goto(`/interfaces/${encodeURIComponent(name)}`, { replaceState: true, noScroll: true });
 	});
 
 	async function loadActivity() {
@@ -113,7 +144,9 @@
 		activityError = null;
 		try {
 			const res = await api.audit.list({ q: name, page_size: 50 });
-			activity = res.items.filter((a) => a.target === name || a.target?.startsWith(`${name}/`) || a.action.startsWith('interface.'));
+			activity = res.items.filter(
+				(a) => a.target === name || a.target?.startsWith(`${name}/`) || a.action.startsWith('interface.')
+			);
 		} catch (err) {
 			activityError = toApiError(err).detail;
 		} finally {
@@ -134,7 +167,9 @@
 			toast.success(`${iface.name} is ${iface.is_active ? 'up' : 'down'}`);
 		} catch (err) {
 			iface = prev;
-			toast.error(`Could not bring ${prev.name} ${up ? 'up' : 'down'}`, { description: toApiError(err).detail });
+			toast.error(`Could not bring ${prev.name} ${up ? 'up' : 'down'}`, {
+				description: toApiError(err).detail
+			});
 		} finally {
 			toggling = false;
 		}
@@ -169,8 +204,20 @@
 
 	const menuItems = $derived<MenuItem[]>([
 		{ label: 'Edit settings', icon: Settings2, onselect: () => (tab = 'settings'), hidden: !canWrite },
-		{ label: 'Download server config', icon: Download, onselect: () => void downloadServerConfig(), hidden: !isAdmin },
-		{ label: 'Delete interface', icon: Trash2, danger: true, separator: true, onselect: () => (deleteOpen = true), hidden: !canWrite }
+		{
+			label: 'Download server config',
+			icon: Download,
+			onselect: () => void downloadServerConfig(),
+			hidden: !isAdmin
+		},
+		{
+			label: 'Delete interface',
+			icon: Trash2,
+			danger: true,
+			separator: true,
+			onselect: () => (deleteOpen = true),
+			hidden: !canWrite
+		}
 	]);
 
 	const tabs = $derived([
@@ -203,17 +250,33 @@
 </svelte:head>
 
 {#if notFound}
-	<ErrorState title="Interface not found" message={`There is no interface named "${name}".`} onretry={() => goto('/interfaces')} />
+	<ErrorState
+		title="Interface not found"
+		message={`There is no interface named "${name}".`}
+		onretry={() => goto('/interfaces')}
+	/>
 {:else if poller.error && !iface}
 	<ErrorState message={poller.error.detail} onretry={() => poller.refresh()} retrying={poller.refreshing} />
 {:else}
-	<PageHeader title={name} mono description={iface ? `${iface.address} · UDP ${iface.listen_port}${iface.public_endpoint ? ` · ${iface.public_endpoint}` : ''}` : undefined}>
+	<PageHeader
+		title={name}
+		mono
+		description={iface
+			? `${iface.address} · UDP ${iface.listen_port}${iface.public_endpoint ? ` · ${iface.public_endpoint}` : ''}`
+			: undefined}
+	>
 		{#snippet badge()}
 			{#if iface}<InterfaceStatusBadge {iface} />{/if}
 		{/snippet}
 		{#snippet actions()}
 			{#if iface && canWrite}
-				<Switch checked={iface.enabled} label={iface.enabled ? 'Interface up' : 'Interface down'} size="sm" loading={toggling} onchange={(v) => toggle(v)} />
+				<Switch
+					checked={iface.enabled}
+					label={iface.enabled ? 'Interface up' : 'Interface down'}
+					size="sm"
+					loading={toggling}
+					onchange={(v) => toggle(v)}
+				/>
 				<Button variant="primary" onclick={() => (createOpen = true)}>
 					<Plus class="h-4 w-4" aria-hidden="true" />
 					New peer
@@ -222,7 +285,13 @@
 			{#if iface && (canWrite || isAdmin)}
 				<DropdownMenu items={menuItems} label="Interface actions">
 					{#snippet trigger({ toggle: open, props })}
-						<IconButton label="More actions" variant="outline" onclick={open} loading={downloading} {...props}>
+						<IconButton
+							label="More actions"
+							variant="outline"
+							onclick={open}
+							loading={downloading}
+							{...props}
+						>
 							<MoreHorizontal class="h-4 w-4" />
 						</IconButton>
 					{/snippet}
@@ -250,7 +319,13 @@
 		{#snippet actions()}
 			<SegmentedControl bind:value={range} label="Time range" options={RANGES} />
 		{/snippet}
-		<AreaChart points={stats?.points ?? []} bucketSeconds={stats?.bucket_seconds} title={`Traffic on ${name}`} loading={loading} refreshing={poller.refreshing && !!stats} />
+		<AreaChart
+			points={stats?.points ?? []}
+			bucketSeconds={stats?.bucket_seconds}
+			title={`Traffic on ${name}`}
+			{loading}
+			refreshing={poller.refreshing && !!stats}
+		/>
 	</Card>
 
 	<div class="mt-6">
@@ -261,10 +336,26 @@
 		<div id="iface-panel-peers" role="tabpanel" aria-labelledby="iface-peers" class="mt-4">
 			<Card flush>
 				<div class="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
-					<Input label="Search peers" hideLabel bind:value={query} placeholder="Search peers…" size="sm" class="w-full sm:w-64" data-hotkey-search type="search">
+					<Input
+						label="Search peers"
+						hideLabel
+						bind:value={query}
+						placeholder="Search peers…"
+						size="sm"
+						class="w-full sm:w-64"
+						data-hotkey-search
+						type="search"
+					>
 						{#snippet leading()}<Search class="h-4 w-4" />{/snippet}
 					</Input>
-					<Select label="Status" hideLabel size="sm" bind:value={statusFilter} options={STATUS_OPTIONS} class="w-40" />
+					<Select
+						label="Status"
+						hideLabel
+						size="sm"
+						bind:value={statusFilter}
+						options={STATUS_OPTIONS}
+						class="w-40"
+					/>
 				</div>
 				{#if iface}
 					<PeerManager
@@ -308,7 +399,10 @@
 									{/snippet}
 								</EmptyState>
 							{:else}
-								<EmptyState title="No peers yet" description="Add a device: TunnBox generates its keys and shows a QR code you can scan right away.">
+								<EmptyState
+									title="No peers yet"
+									description="Add a device: TunnBox generates its keys and shows a QR code you can scan right away."
+								>
 									{#snippet icon()}<Users class="h-6 w-6" />{/snippet}
 									{#snippet actions()}
 										{#if canWrite}
@@ -337,10 +431,14 @@
 		<div id="iface-panel-activity" role="tabpanel" aria-labelledby="iface-activity" class="mt-4">
 			<Card title="Activity" description={`Audit entries mentioning ${name}`} flush>
 				{#snippet actions()}
-					<Button size="sm" variant="ghost" href={`/audit?q=${encodeURIComponent(name)}`}>Open in audit log</Button>
+					<Button size="sm" variant="ghost" href={`/audit?q=${encodeURIComponent(name)}`}
+						>Open in audit log</Button
+					>
 				{/snippet}
 				{#if activityLoading}
-					<div class="divide-y divide-border">{#each [1, 2, 3] as i (i)}<div class="px-5 py-3"><Skeleton class="h-3.5 w-64" /></div>{/each}</div>
+					<div class="divide-y divide-border">
+						{#each [1, 2, 3] as i (i)}<div class="px-5 py-3"><Skeleton class="h-3.5 w-64" /></div>{/each}
+					</div>
 				{:else if activityError}
 					<ErrorState compact message={activityError} onretry={loadActivity} />
 				{:else if activity.length === 0}
@@ -349,15 +447,20 @@
 					<ol class="divide-y divide-border">
 						{#each activity as a (a.id)}
 							<li class="flex items-start gap-3 px-5 py-2.5 text-[13px]">
-								<span class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-fg-subtle/60" aria-hidden="true"></span>
+								<span class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-fg-subtle/60" aria-hidden="true"
+								></span>
 								<div class="min-w-0 flex-1">
 									<p class="text-fg">
 										<span class="font-medium">{a.username ?? 'system'}</span>
 										<span class="text-fg-muted"> · </span>
 										<code class="font-mono text-[12px] text-fg-muted">{a.action}</code>
-										{#if a.target}<span class="text-fg-muted"> → </span><span class="font-mono text-[12px]">{a.target}</span>{/if}
+										{#if a.target}<span class="text-fg-muted"> → </span><span class="font-mono text-[12px]"
+												>{a.target}</span
+											>{/if}
 									</p>
-									<p class="text-[12px] text-fg-subtle" title={formatDateTime(a.created_at)}>{formatRelative(a.created_at)}</p>
+									<p class="text-[12px] text-fg-subtle" title={formatDateTime(a.created_at)}>
+										{formatRelative(a.created_at)}
+									</p>
 								</div>
 							</li>
 						{/each}

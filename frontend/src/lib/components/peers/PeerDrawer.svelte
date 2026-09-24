@@ -128,7 +128,9 @@
 				<dl class="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
 					<div>
 						<dt class="text-fg-subtle">Last handshake</dt>
-						<dd class="text-fg" title={formatDateTime(peer.latest_handshake_at)}>{formatRelative(peer.latest_handshake_at, ticker.now)}</dd>
+						<dd class="text-fg" title={formatDateTime(peer.latest_handshake_at)}>
+							{formatRelative(peer.latest_handshake_at, ticker.now)}
+						</dd>
 					</div>
 					<div>
 						<dt class="text-fg-subtle">Endpoint</dt>
@@ -136,7 +138,7 @@
 					</div>
 					<div>
 						<dt class="text-fg-subtle">Download / Upload</dt>
-						<dd class="tabular text-fg">{formatBytes(peer.rx_total)} / {formatBytes(peer.tx_total)}</dd>
+						<dd class="text-fg tabular">{formatBytes(peer.rx_total)} / {formatBytes(peer.tx_total)}</dd>
 					</div>
 					<div>
 						<dt class="text-fg-subtle">Keepalive</dt>
@@ -146,7 +148,9 @@
 						<dt class="text-fg-subtle">Routing</dt>
 						<dd class="text-fg">
 							{isFullTunnel(peer.client_allowed_ips) ? 'Full tunnel' : 'Split tunnel'}
-							<span class="block break-all font-mono text-[12px] text-fg-subtle">{peer.client_allowed_ips}</span>
+							<span class="block font-mono text-[12px] break-all text-fg-subtle"
+								>{peer.client_allowed_ips}</span
+							>
 						</dd>
 					</div>
 					<div>
@@ -155,7 +159,10 @@
 					</div>
 					<div>
 						<dt class="text-fg-subtle">Expires</dt>
-						<dd class={peer.status === 'expired' ? 'text-danger' : 'text-fg'} title={formatDateTime(peer.expires_at)}>
+						<dd
+							class={peer.status === 'expired' ? 'text-danger' : 'text-fg'}
+							title={formatDateTime(peer.expires_at)}
+						>
 							{peer.expires_at ? formatRelative(peer.expires_at, ticker.now) : 'Never'}
 						</dd>
 					</div>
@@ -173,7 +180,9 @@
 					<div class="sm:col-span-2">
 						<dt class="text-fg-subtle">Keys</dt>
 						<dd class="text-fg">
-							{peer.has_private_key ? 'Private key stored' : 'Private key not stored'} · {peer.has_preshared_key ? 'Preshared key set' : 'No preshared key'}
+							{peer.has_private_key ? 'Private key stored' : 'Private key not stored'} · {peer.has_preshared_key
+								? 'Preshared key set'
+								: 'No preshared key'}
 						</dd>
 					</div>
 					{#if peer.notes}

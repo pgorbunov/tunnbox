@@ -46,10 +46,10 @@
 		<select
 			{id}
 			bind:value
-			class={`w-full appearance-none rounded-md border bg-surface pl-3 pr-9 text-fg shadow-sm transition-colors duration-150
+			class={`w-full appearance-none rounded-md border bg-surface pr-9 pl-3 text-fg shadow-sm transition-colors duration-150
 				${size === 'sm' ? 'h-9 text-[13px]' : 'h-10 text-sm'}
 				${error ? 'border-danger' : 'border-border hover:border-border-strong'}
-				disabled:opacity-60 disabled:bg-bg-subtle`}
+				disabled:bg-bg-subtle disabled:opacity-60`}
 			aria-invalid={error ? true : undefined}
 			aria-describedby={error ? errorId : hint ? hintId : undefined}
 			{...rest}
@@ -61,7 +61,10 @@
 				<option value={opt.value} disabled={opt.disabled}>{opt.label}</option>
 			{/each}
 		</select>
-		<ChevronDown class="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-subtle" aria-hidden="true" />
+		<ChevronDown
+			class="pointer-events-none absolute top-1/2 right-2.5 h-4 w-4 -translate-y-1/2 text-fg-subtle"
+			aria-hidden="true"
+		/>
 	</div>
 	{#if error}
 		<p id={errorId} class="text-[13px] text-danger" role="alert">{error}</p>

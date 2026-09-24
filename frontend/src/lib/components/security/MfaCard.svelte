@@ -86,10 +86,16 @@
 	}
 </script>
 
-<Card title="Two-factor authentication" description="Require a code from an authenticator app when signing in.">
+<Card
+	title="Two-factor authentication"
+	description="Require a code from an authenticator app when signing in."
+>
 	<div class="flex flex-wrap items-center justify-between gap-4">
 		<div class="flex items-center gap-3">
-			<span class={`flex h-10 w-10 items-center justify-center rounded-md ${enabled ? 'bg-success-soft text-success' : 'bg-bg-subtle text-fg-subtle'}`} aria-hidden="true">
+			<span
+				class={`flex h-10 w-10 items-center justify-center rounded-md ${enabled ? 'bg-success-soft text-success' : 'bg-bg-subtle text-fg-subtle'}`}
+				aria-hidden="true"
+			>
 				{#if enabled}<ShieldCheck class="h-5 w-5" />{:else}<ShieldOff class="h-5 w-5" />{/if}
 			</span>
 			<div class="text-sm">
@@ -97,7 +103,11 @@
 					Authenticator app
 					<Badge tone={enabled ? 'success' : 'neutral'} size="sm">{enabled ? 'Enabled' : 'Off'}</Badge>
 				</p>
-				<p class="text-[13px] text-fg-subtle">{enabled ? 'Your account is protected with TOTP codes.' : 'Strongly recommended for admin accounts.'}</p>
+				<p class="text-[13px] text-fg-subtle">
+					{enabled
+						? 'Your account is protected with TOTP codes.'
+						: 'Strongly recommended for admin accounts.'}
+				</p>
 			</div>
 		</div>
 		<div class="flex flex-wrap gap-2">
@@ -126,7 +136,14 @@
 			<Alert tone="danger">{error}</Alert>
 		{/if}
 		<Input label="Password" type="password" autocomplete="current-password" bind:value={password} required />
-		<Input label="Authenticator or recovery code" mono inputmode="numeric" autocomplete="one-time-code" bind:value={code} required />
+		<Input
+			label="Authenticator or recovery code"
+			mono
+			inputmode="numeric"
+			autocomplete="one-time-code"
+			bind:value={code}
+			required
+		/>
 	</form>
 	{#snippet footer()}
 		<Button variant="ghost" onclick={() => (disableOpen = false)} disabled={busy}>Cancel</Button>
@@ -134,7 +151,12 @@
 	{/snippet}
 </Dialog>
 
-<Dialog bind:open={regenOpen} title={codes ? 'Your new recovery codes' : 'Regenerate recovery codes'} size="md" locked={busy || (!!codes && !acknowledged)}>
+<Dialog
+	bind:open={regenOpen}
+	title={codes ? 'Your new recovery codes' : 'Regenerate recovery codes'}
+	size="md"
+	locked={busy || (!!codes && !acknowledged)}
+>
 	{#if codes}
 		<RecoveryCodes {codes} bind:acknowledged />
 	{:else}
@@ -146,11 +168,19 @@
 				void regenerate();
 			}}
 		>
-			<p class="text-sm text-fg-muted">This invalidates all existing recovery codes. Confirm your password to continue.</p>
+			<p class="text-sm text-fg-muted">
+				This invalidates all existing recovery codes. Confirm your password to continue.
+			</p>
 			{#if error}
 				<Alert tone="danger">{error}</Alert>
 			{/if}
-			<Input label="Password" type="password" autocomplete="current-password" bind:value={password} required />
+			<Input
+				label="Password"
+				type="password"
+				autocomplete="current-password"
+				bind:value={password}
+				required
+			/>
 		</form>
 	{/if}
 	{#snippet footer()}

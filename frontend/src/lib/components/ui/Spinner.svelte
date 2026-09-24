@@ -1,9 +1,13 @@
 <script lang="ts">
-	let { size = 16, class: className = '', label = 'Loading' }: { size?: number; class?: string; label?: string } = $props();
+	let {
+		size = 16,
+		class: className = '',
+		label = 'Loading'
+	}: { size?: number; class?: string; label?: string } = $props();
 </script>
 
 <svg
-	class={`animate-spin motion-reduce:animate-none shrink-0 ${className}`}
+	class={`shrink-0 animate-spin motion-reduce:animate-none ${className}`}
 	width={size}
 	height={size}
 	viewBox="0 0 24 24"

@@ -238,7 +238,9 @@
 				tabindex="-1"
 				onclick={() => (open = false)}
 			></button>
-			<div class="anim-pop-in relative flex max-h-[70vh] w-full max-w-xl flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-lg">
+			<div
+				class="anim-pop-in relative flex max-h-[70vh] w-full max-w-xl flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-lg"
+			>
 				<div class="flex items-center gap-3 border-b border-border px-4">
 					<Search class="h-5 w-5 shrink-0 text-fg-subtle" aria-hidden="true" />
 					<input
@@ -255,20 +257,28 @@
 						autocomplete="off"
 						spellcheck="false"
 						class="h-12 w-full bg-transparent text-base text-fg outline-none placeholder:text-fg-subtle"
-						onkeydown={onkeydown}
+						{onkeydown}
 					/>
 					{#if searching}
 						<Spinner size={16} class="text-fg-subtle" />
 					{/if}
 					<Kbd>Esc</Kbd>
 				</div>
-				<div bind:this={listEl} id={listId} role="listbox" aria-label="Results" class="scrollbar-thin min-h-0 flex-1 overflow-y-auto py-2">
+				<div
+					bind:this={listEl}
+					id={listId}
+					role="listbox"
+					aria-label="Results"
+					class="min-h-0 flex-1 overflow-y-auto py-2 scrollbar-thin"
+				>
 					{#if results.length === 0}
 						<p class="px-4 py-8 text-center text-sm text-fg-muted">No matches for “{query}”</p>
 					{/if}
 					{#each grouped as [group, items] (group)}
 						<div role="group" aria-label={group}>
-							<p class="px-4 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">{group}</p>
+							<p class="px-4 pt-2 pb-1 text-[11px] font-semibold tracking-wide text-fg-subtle uppercase">
+								{group}
+							</p>
 							{#each items as item (item.id)}
 								{@const i = indexOf(item)}
 								<div
@@ -298,7 +308,9 @@
 						</div>
 					{/each}
 				</div>
-				<div class="hidden items-center gap-3 border-t border-border px-4 py-2 text-[11px] text-fg-subtle sm:flex">
+				<div
+					class="hidden items-center gap-3 border-t border-border px-4 py-2 text-[11px] text-fg-subtle sm:flex"
+				>
 					<span class="flex items-center gap-1"><Kbd>↑</Kbd><Kbd>↓</Kbd> navigate</span>
 					<span class="flex items-center gap-1"><Kbd>↵</Kbd> open</span>
 					<span class="flex items-center gap-1"><Kbd>Esc</Kbd> close</span>

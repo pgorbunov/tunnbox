@@ -60,7 +60,10 @@ export function formatRelative(iso: string | Date | null | undefined, now: numbe
 }
 
 /** Locale date+time, e.g. "Sep 24, 2026, 14:03". */
-export function formatDateTime(iso: string | Date | null | undefined, opts: Intl.DateTimeFormatOptions = {}): string {
+export function formatDateTime(
+	iso: string | Date | null | undefined,
+	opts: Intl.DateTimeFormatOptions = {}
+): string {
 	const d = iso instanceof Date ? iso : parseDate(iso);
 	if (!d) return '—';
 	return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short', ...opts });

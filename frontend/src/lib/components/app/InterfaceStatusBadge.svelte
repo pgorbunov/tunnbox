@@ -3,7 +3,8 @@
 	import Badge from '$lib/components/ui/Badge.svelte';
 	import StatusDot from './StatusDot.svelte';
 
-	let { iface, size = 'md' }: { iface: Pick<Interface, 'enabled' | 'is_active'>; size?: 'sm' | 'md' } = $props();
+	let { iface, size = 'md' }: { iface: Pick<Interface, 'enabled' | 'is_active'>; size?: 'sm' | 'md' } =
+		$props();
 
 	const state = $derived(
 		iface.is_active

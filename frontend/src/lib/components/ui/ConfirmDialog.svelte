@@ -71,7 +71,13 @@
 	</form>
 	{#snippet footer()}
 		<Button variant="ghost" onclick={() => (open = false)} disabled={loading}>{cancelLabel}</Button>
-		<Button variant={tone === 'danger' ? 'danger' : 'primary'} type="submit" form="confirm-form" disabled={!ready} {loading}>
+		<Button
+			variant={tone === 'danger' ? 'danger' : 'primary'}
+			type="submit"
+			form="confirm-form"
+			disabled={!ready}
+			{loading}
+		>
 			{confirmLabel}
 		</Button>
 	{/snippet}

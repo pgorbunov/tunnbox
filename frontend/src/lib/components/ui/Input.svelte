@@ -44,18 +44,20 @@
 	{/if}
 	<div class="relative flex items-center">
 		{#if leading}
-			<span class="pointer-events-none absolute left-3 flex items-center text-fg-subtle">{@render leading()}</span>
+			<span class="pointer-events-none absolute left-3 flex items-center text-fg-subtle"
+				>{@render leading()}</span
+			>
 		{/if}
 		<input
 			{id}
 			bind:value
 			bind:this={ref}
-			class={`w-full rounded-md border bg-surface text-fg placeholder:text-fg-subtle shadow-sm transition-colors duration-150
+			class={`w-full rounded-md border bg-surface text-fg shadow-sm transition-colors duration-150 placeholder:text-fg-subtle
 				${size === 'sm' ? 'h-9 text-[13px]' : 'h-10 text-sm'}
 				${leading ? 'pl-9' : 'pl-3'} ${trailing ? 'pr-10' : 'pr-3'}
 				${mono ? 'font-mono' : ''}
 				${error ? 'border-danger focus-visible:outline-danger' : 'border-border hover:border-border-strong'}
-				disabled:opacity-60 disabled:bg-bg-subtle read-only:bg-bg-subtle`}
+				read-only:bg-bg-subtle disabled:bg-bg-subtle disabled:opacity-60`}
 			aria-invalid={error ? true : undefined}
 			aria-describedby={error ? errorId : hint ? hintId : undefined}
 			{...rest}

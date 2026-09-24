@@ -120,9 +120,35 @@
 					{#if error}
 						<Alert tone="danger">{error}</Alert>
 					{/if}
-					<Input label="Username" bind:value={username} autocomplete="username" required autocapitalize="off" spellcheck={false} error={show('username')} onblur={() => (touched = { ...touched, username: true })} />
-					<Input label="Password" type="password" bind:value={password} autocomplete="new-password" required hint="10–128 characters; avoid common passwords." error={show('password')} onblur={() => (touched = { ...touched, password: true })} />
-					<Input label="Confirm password" type="password" bind:value={confirm} autocomplete="new-password" required error={show('confirm')} onblur={() => (touched = { ...touched, confirm: true })} />
+					<Input
+						label="Username"
+						bind:value={username}
+						autocomplete="username"
+						required
+						autocapitalize="off"
+						spellcheck={false}
+						error={show('username')}
+						onblur={() => (touched = { ...touched, username: true })}
+					/>
+					<Input
+						label="Password"
+						type="password"
+						bind:value={password}
+						autocomplete="new-password"
+						required
+						hint="10–128 characters; avoid common passwords."
+						error={show('password')}
+						onblur={() => (touched = { ...touched, password: true })}
+					/>
+					<Input
+						label="Confirm password"
+						type="password"
+						bind:value={confirm}
+						autocomplete="new-password"
+						required
+						error={show('confirm')}
+						onblur={() => (touched = { ...touched, confirm: true })}
+					/>
 					<Button variant="primary" type="submit" block size="lg" loading={submitting}>
 						Create account
 						<ArrowRight class="h-4 w-4" aria-hidden="true" />
@@ -130,7 +156,10 @@
 				</form>
 			{:else if step === 1}
 				<h1 class="text-lg font-semibold text-fg" tabindex="-1">Server endpoint</h1>
-				<p class="mt-1 text-sm text-fg-muted">The public hostname or IP that clients use to reach this server. You can change it later in Settings.</p>
+				<p class="mt-1 text-sm text-fg-muted">
+					The public hostname or IP that clients use to reach this server. You can change it later in
+					Settings.
+				</p>
 				<form
 					class="mt-6 flex flex-col gap-4"
 					onsubmit={(e) => {
@@ -141,7 +170,15 @@
 					{#if error}
 						<Alert tone="danger">{error}</Alert>
 					{/if}
-					<Input label="Public endpoint" bind:value={endpoint} mono placeholder="vpn.example.com" hint="Hostname or IP only — the port comes from each interface." error={show('endpoint')} onblur={() => (touched = { ...touched, endpoint: true })} />
+					<Input
+						label="Public endpoint"
+						bind:value={endpoint}
+						mono
+						placeholder="vpn.example.com"
+						hint="Hostname or IP only — the port comes from each interface."
+						error={show('endpoint')}
+						onblur={() => (touched = { ...touched, endpoint: true })}
+					/>
 					<Button variant="primary" type="submit" block size="lg" loading={submitting}>
 						Continue
 						<ArrowRight class="h-4 w-4" aria-hidden="true" />
@@ -150,11 +187,16 @@
 				</form>
 			{:else}
 				<div class="flex flex-col items-center text-center">
-					<div class="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-accent-soft text-accent" aria-hidden="true">
+					<div
+						class="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-accent-soft text-accent"
+						aria-hidden="true"
+					>
 						<PartyPopper class="h-7 w-7" />
 					</div>
 					<h1 class="text-lg font-semibold text-fg" tabindex="-1">You're all set</h1>
-					<p class="mt-1 text-sm text-fg-muted">Create your first WireGuard interface, then add peers and share their configs in one click.</p>
+					<p class="mt-1 text-sm text-fg-muted">
+						Create your first WireGuard interface, then add peers and share their configs in one click.
+					</p>
 					<div class="mt-6 flex w-full flex-col gap-2">
 						<Button variant="primary" size="lg" block onclick={() => finish('/interfaces?new=1')}>
 							<Network class="h-4 w-4" aria-hidden="true" />

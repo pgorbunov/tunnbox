@@ -30,7 +30,12 @@
 	let query = $state(page.url.searchParams.get('q') ?? '');
 	let ifaceFilter = $state(page.url.searchParams.get('interface') ?? '');
 	let statusFilter = $state<PeerStatus | ''>(
-		initialStatus === 'online' || initialStatus === 'offline' || initialStatus === 'disabled' || initialStatus === 'expired' ? initialStatus : ''
+		initialStatus === 'online' ||
+			initialStatus === 'offline' ||
+			initialStatus === 'disabled' ||
+			initialStatus === 'expired'
+			? initialStatus
+			: ''
 	);
 	let pageNo = $state(1);
 	let pageSize = $state(25);
@@ -55,7 +60,16 @@
 	const poller = createPoller(
 		async (signal) => {
 			const [res, ifs] = await Promise.all([
-				api.peers.search({ q: debounced || undefined, interface: ifaceFilter || undefined, status: statusFilter || undefined, page: pageNo, page_size: pageSize }, signal),
+				api.peers.search(
+					{
+						q: debounced || undefined,
+						interface: ifaceFilter || undefined,
+						status: statusFilter || undefined,
+						page: pageNo,
+						page_size: pageSize
+					},
+					signal
+				),
 				api.interfaces.list(signal)
 			]);
 			peers = res.items;
@@ -83,11 +97,15 @@
 		if (statusFilter) sp.set('status', statusFilter);
 		const s = sp.toString();
 		const target = s ? `/peers?${s}` : '/peers';
-		if (page.url.pathname + page.url.search !== target) void goto(target, { replaceState: true, noScroll: true, keepFocus: true });
+		if (page.url.pathname + page.url.search !== target)
+			void goto(target, { replaceState: true, noScroll: true, keepFocus: true });
 	});
 
 	const filtered = $derived(!!debounced || !!ifaceFilter || !!statusFilter);
-	const ifaceOptions = $derived([{ value: '', label: 'All interfaces' }, ...interfaces.map((i) => ({ value: i.name, label: i.name }))]);
+	const ifaceOptions = $derived([
+		{ value: '', label: 'All interfaces' },
+		...interfaces.map((i) => ({ value: i.name, label: i.name }))
+	]);
 </script>
 
 <svelte:head>
@@ -96,11 +114,36 @@
 
 <PageHeader title="Peers" description="Every peer across all interfaces.">
 	<div class="flex flex-wrap items-center gap-2">
-		<Input label="Search peers" hideLabel bind:value={query} placeholder="Search by name, address or key…" size="sm" class="w-full sm:w-72" data-hotkey-search type="search">
+		<Input
+			label="Search peers"
+			hideLabel
+			bind:value={query}
+			placeholder="Search by name, address or key…"
+			size="sm"
+			class="w-full sm:w-72"
+			data-hotkey-search
+			type="search"
+		>
 			{#snippet leading()}<Search class="h-4 w-4" />{/snippet}
 		</Input>
-		<Select label="Interface" hideLabel size="sm" bind:value={ifaceFilter} options={ifaceOptions} class="w-40" onchange={() => (pageNo = 1)} />
-		<Select label="Status" hideLabel size="sm" bind:value={statusFilter} options={STATUS_OPTIONS} class="w-40" onchange={() => (pageNo = 1)} />
+		<Select
+			label="Interface"
+			hideLabel
+			size="sm"
+			bind:value={ifaceFilter}
+			options={ifaceOptions}
+			class="w-40"
+			onchange={() => (pageNo = 1)}
+		/>
+		<Select
+			label="Status"
+			hideLabel
+			size="sm"
+			bind:value={statusFilter}
+			options={STATUS_OPTIONS}
+			class="w-40"
+			onchange={() => (pageNo = 1)}
+		/>
 	</div>
 </PageHeader>
 
@@ -139,7 +182,10 @@
 						{/snippet}
 					</EmptyState>
 				{:else}
-					<EmptyState title="No peers yet" description="Peers are created on an interface. Open one to add your first device.">
+					<EmptyState
+						title="No peers yet"
+						description="Peers are created on an interface. Open one to add your first device."
+					>
 						{#snippet icon()}<Users class="h-6 w-6" />{/snippet}
 						{#snippet actions()}
 							<Button variant="primary" href="/interfaces">Go to interfaces</Button>

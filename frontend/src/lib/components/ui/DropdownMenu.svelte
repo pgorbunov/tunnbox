@@ -120,7 +120,13 @@
 	});
 </script>
 
-<div bind:this={root} class={`relative inline-flex ${className}`} use:clickOutside={() => close(false)} onkeydown={onkeydown} role="presentation">
+<div
+	bind:this={root}
+	class={`relative inline-flex ${className}`}
+	use:clickOutside={() => close(false)}
+	{onkeydown}
+	role="presentation"
+>
 	{@render trigger({ open, toggle, props: triggerProps })}
 	{#if open}
 		<div

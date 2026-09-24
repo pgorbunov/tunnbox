@@ -73,7 +73,8 @@ export const mfa = {
 };
 
 export const apiKeys = {
-	list: (all = false, signal?: AbortSignal) => get<ApiKey[]>('/api-keys', all ? { all: true } : undefined, signal),
+	list: (all = false, signal?: AbortSignal) =>
+		get<ApiKey[]>('/api-keys', all ? { all: true } : undefined, signal),
 	create: (body: ApiKeyCreateRequest) => post<ApiKeyCreated>('/api-keys', body),
 	revoke: (id: number) => del(`/api-keys/${id}`)
 };
@@ -106,7 +107,8 @@ export const interfaces = {
 };
 
 export const peers = {
-	search: (query: GlobalPeerQuery = {}, signal?: AbortSignal) => get<Page<Peer>>('/peers', { ...query }, signal),
+	search: (query: GlobalPeerQuery = {}, signal?: AbortSignal) =>
+		get<Page<Peer>>('/peers', { ...query }, signal),
 	get: (id: number, signal?: AbortSignal) => get<Peer>(`/peers/${id}`, undefined, signal),
 	update: (id: number, body: PeerUpdateRequest) => patch<Peer>(`/peers/${id}`, body),
 	remove: (id: number) => del(`/peers/${id}`),
@@ -136,7 +138,8 @@ export const stats = {
 };
 
 export const audit = {
-	list: (query: AuditQuery = {}, signal?: AbortSignal) => get<Page<AuditEntry>>('/audit', { ...query }, signal),
+	list: (query: AuditQuery = {}, signal?: AbortSignal) =>
+		get<Page<AuditEntry>>('/audit', { ...query }, signal),
 	actions: (signal?: AbortSignal) => get<string[]>('/audit/actions', undefined, signal),
 	exportCsv: (query: AuditQuery = {}) => downloadFile('/audit/export.csv', 'audit.csv', { ...query })
 };

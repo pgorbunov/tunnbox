@@ -31,7 +31,12 @@
 				Loading
 			{/if}
 		</span>
-		<IconButton label="Refresh now" size="sm" onclick={() => liveStatus.refresh()} loading={liveStatus.refreshing}>
+		<IconButton
+			label="Refresh now"
+			size="sm"
+			onclick={() => liveStatus.refresh()}
+			loading={liveStatus.refreshing}
+		>
 			<RefreshCw class="h-4 w-4" />
 		</IconButton>
 	</div>

@@ -29,7 +29,10 @@
 	const Icon = $derived(TONES[tone].icon);
 </script>
 
-<div class={`flex gap-3 rounded-md border px-3.5 py-3 text-sm ${TONES[tone].box} ${className}`} role={tone === 'danger' ? 'alert' : 'status'}>
+<div
+	class={`flex gap-3 rounded-md border px-3.5 py-3 text-sm ${TONES[tone].box} ${className}`}
+	role={tone === 'danger' ? 'alert' : 'status'}
+>
 	<Icon class={`mt-0.5 h-4 w-4 shrink-0 ${ICON_COLOR[tone]}`} aria-hidden="true" />
 	<div class="min-w-0 flex-1">
 		{#if title}

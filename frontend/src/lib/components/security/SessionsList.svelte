@@ -37,8 +37,22 @@
 	function describe(ua: string | null): { label: string; mobile: boolean } {
 		if (!ua) return { label: 'Unknown device', mobile: false };
 		const mobile = /Mobile|Android|iPhone|iPad/i.test(ua);
-		const browser = /Firefox\/(\d+)/.exec(ua)?.[0] ?? /Edg\/(\d+)/.exec(ua)?.[0].replace('Edg', 'Edge') ?? /Chrome\/(\d+)/.exec(ua)?.[0] ?? (/Safari/.test(ua) ? 'Safari' : ua.slice(0, 40));
-		const os = /Windows/.test(ua) ? 'Windows' : /Mac OS X/.test(ua) ? 'macOS' : /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : /Linux/.test(ua) ? 'Linux' : '';
+		const browser =
+			/Firefox\/(\d+)/.exec(ua)?.[0] ??
+			/Edg\/(\d+)/.exec(ua)?.[0].replace('Edg', 'Edge') ??
+			/Chrome\/(\d+)/.exec(ua)?.[0] ??
+			(/Safari/.test(ua) ? 'Safari' : ua.slice(0, 40));
+		const os = /Windows/.test(ua)
+			? 'Windows'
+			: /Mac OS X/.test(ua)
+				? 'macOS'
+				: /Android/.test(ua)
+					? 'Android'
+					: /iPhone|iPad/.test(ua)
+						? 'iOS'
+						: /Linux/.test(ua)
+							? 'Linux'
+							: '';
 		return { label: [browser.replace('/', ' '), os].filter(Boolean).join(' · '), mobile };
 	}
 
@@ -83,7 +97,10 @@
 	{#if loading}
 		<div class="divide-y divide-border">
 			{#each [1, 2] as i (i)}
-				<div class="flex items-center gap-4 px-5 py-4"><Skeleton class="h-9 w-9" rounded="md" /><div class="flex-1"><Skeleton class="h-4 w-48" /><Skeleton class="mt-2 h-3 w-32" /></div></div>
+				<div class="flex items-center gap-4 px-5 py-4">
+					<Skeleton class="h-9 w-9" rounded="md" />
+					<div class="flex-1"><Skeleton class="h-4 w-48" /><Skeleton class="mt-2 h-3 w-32" /></div>
+				</div>
 			{/each}
 		</div>
 	{:else if error}
@@ -93,7 +110,10 @@
 			{#each sessions as s (s.id)}
 				{@const d = describe(s.user_agent)}
 				<li class="flex items-center gap-4 px-5 py-4">
-					<span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-bg-subtle text-fg-subtle" aria-hidden="true">
+					<span
+						class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-bg-subtle text-fg-subtle"
+						aria-hidden="true"
+					>
 						{#if d.mobile}<Smartphone class="h-5 w-5" />{:else}<Monitor class="h-5 w-5" />{/if}
 					</span>
 					<div class="min-w-0 flex-1 text-sm">
@@ -102,11 +122,15 @@
 							{#if s.current}<Badge tone="accent" size="sm">This device</Badge>{/if}
 						</p>
 						<p class="mt-0.5 text-[13px] text-fg-subtle">
-							{s.ip ?? 'Unknown IP'} · Last active {formatRelative(s.last_used_at)} · Signed in {formatDateTime(s.created_at)}
+							{s.ip ?? 'Unknown IP'} · Last active {formatRelative(s.last_used_at)} · Signed in {formatDateTime(
+								s.created_at
+							)}
 						</p>
 					</div>
 					{#if !s.current}
-						<Button size="sm" variant="ghost" onclick={() => revoke(s)} loading={revoking === s.id}>Revoke</Button>
+						<Button size="sm" variant="ghost" onclick={() => revoke(s)} loading={revoking === s.id}
+							>Revoke</Button
+						>
 					{/if}
 				</li>
 			{/each}

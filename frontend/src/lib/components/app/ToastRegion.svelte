@@ -3,7 +3,12 @@
 	import { toast, type ToastKind } from '$lib/stores/toast.svelte';
 	import IconButton from '$lib/components/ui/IconButton.svelte';
 
-	const ICONS: Record<ToastKind, typeof Info> = { success: CheckCircle2, error: XCircle, info: Info, warning: AlertTriangle };
+	const ICONS: Record<ToastKind, typeof Info> = {
+		success: CheckCircle2,
+		error: XCircle,
+		info: Info,
+		warning: AlertTriangle
+	};
 	const COLORS: Record<ToastKind, string> = {
 		success: 'text-success',
 		error: 'text-danger',

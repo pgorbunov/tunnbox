@@ -58,7 +58,7 @@
 			bind:this={buttons[i]}
 			onclick={() => select(opt.value)}
 			onkeydown={(e) => onkeydown(e, i)}
-			class={`flex-1 whitespace-nowrap rounded-[5px] font-medium transition-colors duration-150 disabled:opacity-50
+			class={`flex-1 rounded-[5px] font-medium whitespace-nowrap transition-colors duration-150 disabled:opacity-50
 				${size === 'sm' ? 'h-7 px-2.5 text-[13px]' : 'h-9 px-3.5 text-sm'}
 				${value === opt.value ? 'bg-surface text-fg shadow-sm' : 'text-fg-muted hover:text-fg'}`}
 		>

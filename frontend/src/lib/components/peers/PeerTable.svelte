@@ -82,25 +82,36 @@
 		{:else if col.key === 'name'}
 			<span class="block max-w-[14rem] truncate font-medium text-fg" title={peer.name}>{peer.name}</span>
 			{#if peer.notes}
-				<span class="block max-w-[14rem] truncate text-[12px] text-fg-subtle" title={peer.notes}>{peer.notes}</span>
+				<span class="block max-w-[14rem] truncate text-[12px] text-fg-subtle" title={peer.notes}
+					>{peer.notes}</span
+				>
 			{/if}
 		{:else if col.key === 'address'}
 			<span class="font-mono text-[13px] text-fg-muted">{stripPrefixes(peer.allowed_ips)}</span>
 		{:else if col.key === 'interface'}
-			<a href={`/interfaces/${encodeURIComponent(peer.interface_name)}`} class="font-mono text-[13px] text-fg-muted hover:text-fg hover:underline">{peer.interface_name}</a>
+			<a
+				href={`/interfaces/${encodeURIComponent(peer.interface_name)}`}
+				class="font-mono text-[13px] text-fg-muted hover:text-fg hover:underline">{peer.interface_name}</a
+			>
 		{:else if col.key === 'endpoint'}
 			<span class="font-mono text-[13px] text-fg-muted">{peer.endpoint ?? '—'}</span>
 		{:else if col.key === 'handshake'}
-			<span class="text-fg-muted" title={peer.latest_handshake_at ? formatDateTime(peer.latest_handshake_at) : 'No handshake yet'}>
+			<span
+				class="text-fg-muted"
+				title={peer.latest_handshake_at ? formatDateTime(peer.latest_handshake_at) : 'No handshake yet'}
+			>
 				{formatRelative(peer.latest_handshake_at, ticker.now)}
 			</span>
 		{:else if col.key === 'rx'}
-			<span class="tabular text-fg-muted">{formatBytes(peer.rx_total)}</span>
+			<span class="text-fg-muted tabular">{formatBytes(peer.rx_total)}</span>
 		{:else if col.key === 'tx'}
-			<span class="tabular text-fg-muted">{formatBytes(peer.tx_total)}</span>
+			<span class="text-fg-muted tabular">{formatBytes(peer.tx_total)}</span>
 		{:else if col.key === 'expires'}
 			{#if peer.expires_at}
-				<span class={peer.status === 'expired' ? 'text-danger' : 'text-fg-muted'} title={formatDateTime(peer.expires_at)}>
+				<span
+					class={peer.status === 'expired' ? 'text-danger' : 'text-fg-muted'}
+					title={formatDateTime(peer.expires_at)}
+				>
 					{formatRelative(peer.expires_at, ticker.now)}
 				</span>
 			{:else}
