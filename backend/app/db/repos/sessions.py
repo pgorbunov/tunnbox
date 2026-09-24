@@ -37,11 +37,23 @@ async def get_by_refresh_hash(db: aiosqlite.Connection, refresh_hash: str) -> di
     return await fetch_one(db, "SELECT * FROM sessions WHERE refresh_hash = ?", (refresh_hash,))
 
 
-async def rotate(db: aiosqlite.Connection, session_id: str, refresh_hash: str, now: str, expires_at: str) -> None:
+async def rotate(
+    db: aiosqlite.Connection, session_id: str, old_hash: str, refresh_hash: str, now: str, expires_at: str
+) -> None:
+    """Swap in a new refresh hash and remember the old one for reuse detection."""
     await db.execute(
         "UPDATE sessions SET refresh_hash = ?, last_used_at = ?, expires_at = ? WHERE id = ?",
         (refresh_hash, now, expires_at, session_id),
     )
+    await db.execute(
+        "INSERT OR REPLACE INTO refresh_token_history (refresh_hash, session_id, rotated_at) VALUES (?, ?, ?)",
+        (old_hash, session_id, now),
+    )
+
+
+async def session_id_for_rotated_hash(db: aiosqlite.Connection, refresh_hash: str) -> str | None:
+    row = await fetch_one(db, "SELECT session_id FROM refresh_token_history WHERE refresh_hash = ?", (refresh_hash,))
+    return row["session_id"] if row else None
 
 
 async def touch(db: aiosqlite.Connection, session_id: str, now: str) -> None:

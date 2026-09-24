@@ -48,7 +48,7 @@ async def list_for_interface(
         params += [like, like, like, like]
     column = SORT_COLUMNS.get(sort, SORT_COLUMNS["name"])
     direction = "DESC" if order.lower() == "desc" else "ASC"
-    sql = f"{_SELECT} WHERE {' AND '.join(where)} ORDER BY {column} {direction}, p.id ASC"  # noqa: S608
+    sql = f"{_SELECT} WHERE {' AND '.join(where)} ORDER BY {column} {direction}, p.id {direction}"  # noqa: S608
     return await fetch_all(db, sql, tuple(params))
 
 

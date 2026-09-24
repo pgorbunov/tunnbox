@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-JobFn = Callable[[], Awaitable[None]]
+JobFn = Callable[[], Awaitable[object]]
 
 
 @dataclass

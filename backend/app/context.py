@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from app.config import Settings
 from app.core.crypto import SecretBox
@@ -33,5 +34,5 @@ class AppContext:
     started_at: float = field(default_factory=time.monotonic)
 
     @property
-    def db_path(self):  # noqa: ANN201 - Path
+    def db_path(self) -> Path:
         return self.settings.db_path
