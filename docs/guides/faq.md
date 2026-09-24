@@ -3,88 +3,112 @@
 ## General
 
 ### What is TunnBox?
-TunnBox is a web-based management interface for WireGuard VPN servers. It provides a UI and REST API to create interfaces, manage peers, and monitor connections — without editing WireGuard config files by hand.
+A self-hosted web UI and REST API for managing WireGuard VPN servers — interfaces, peers,
+monitoring, and onboarding — without editing config files by hand.
 
 ### Does TunnBox replace WireGuard?
-No. TunnBox manages WireGuard configuration files and calls the `wg` and `wg-quick` CLI tools. WireGuard itself runs as a kernel module on the host (or in userspace within the container).
+No. It manages WireGuard configuration and calls `wg`/`wg-quick`. WireGuard itself runs as a
+kernel module (or the wireguard-go userspace fallback) inside the container.
 
 ### Is TunnBox free?
-Yes. TunnBox is open-source software released under the MIT License.
+Yes, MIT licensed.
 
-### What platforms does TunnBox support?
-TunnBox runs on Linux with Docker. The WireGuard kernel module requires Linux kernel 5.6 or later (or the out-of-tree module on older kernels). For development, a mock backend allows running on Windows and macOS.
+### What platforms does it run on?
+Linux with Docker for production (kernel 5.6+ for the built-in WireGuard module). A mock backend
+lets the app run — with simulated stats, no real networking — on Windows/macOS for development.
 
 ## Setup
 
-### Do I need to install WireGuard on the host?
-No. The Docker image includes the WireGuard userspace tools. The kernel module is typically already available on modern Linux kernels (5.6+). The container loads it automatically via the `/lib/modules` mount.
-
-### Can I run TunnBox without Docker?
-It is designed to run in Docker. Running natively is possible (FastAPI backend + built SvelteKit frontend) but is not officially supported or documented.
+### Do I need WireGuard installed on the host?
+No. The image includes the userspace tools; the kernel module, if present on the host, is loaded
+via the `/lib/modules` mount.
 
 ### What happens if I don't set SECRET_KEY?
-A random key is generated on each startup. This means all user sessions (JWT tokens) are invalidated every time the container restarts. For production, always set a static `SECRET_KEY`.
+The Docker entrypoint generates one on first start and persists it to
+`./data/app/.secret_key`, so restarts don't invalidate sessions as long as that file survives on
+your mounted volume. Set `SECRET_KEY` explicitly (or make sure `.secret_key` is backed up) — see
+[Configuration](../getting-started/configuration.md) and
+[Security — encryption at rest](./security.md#encryption-at-rest).
 
 ### Can I use TunnBox with an existing WireGuard setup?
-TunnBox manages its own configuration files in `/etc/wireguard/`. It does not read or modify configs created outside of TunnBox. If you have an existing setup, you would need to recreate your interfaces and peers through TunnBox.
+Yes — point `WG_CONFIG_PATH` at your existing `/etc/wireguard`. On first start, any `.conf` file
+not already known to TunnBox is imported (interface + peers) automatically. See
+[Architecture — legacy import](./architecture.md#legacy-import-on-first-start).
+
+### I'm upgrading from TunnBox v1 — what changes?
+See the [Updating guide](./updating.md#upgrading-from-v1): existing configs and peer names import
+automatically, but all sessions are invalidated (everyone logs in again), and new security
+features (MFA, roles, API keys, lockout) are opt-in from there.
 
 ## Networking
 
 ### What ports need to be open?
-- **8000/tcp**: Web UI (or whichever port you map in docker-compose)
-- **51820/udp**: WireGuard (default; one port per interface)
-- **80/tcp and 443/tcp**: Only if using a reverse proxy for HTTPS
+- `8000/tcp` — Web UI/API (or whatever host port you map it to)
+- `51820/udp` — WireGuard, one UDP port per interface
+- `80/tcp`, `443/tcp` — only if a reverse proxy handles HTTPS
 
 ### Can I run multiple WireGuard interfaces?
-Yes. Create additional interfaces in the UI with different names and listen ports. Map each additional UDP port in `docker-compose.yml`:
-```yaml
-ports:
-  - "8000:8000"
-  - "51820:51820/udp"
-  - "51821:51821/udp"
-```
+Yes. Create additional interfaces with distinct names, ports, and subnets, and map each port in
+`docker-compose.yml`. See [Interface Management](./interface-management.md#running-multiple-interfaces).
 
 ### Can peers talk to each other?
-By default, no — each peer is assigned a `/32` address and traffic routes through the server. To allow peer-to-peer communication, you would need to configure AllowedIPs on each peer to include the other peers' addresses and ensure IP forwarding is enabled.
+By default no — each gets a `/32`/`/128` address and traffic routes through the server. Enabling
+peer-to-peer requires custom `AllowedIPs`/routing beyond what the UI configures automatically.
 
 ### How do I route all client traffic through the VPN?
-Set the client's `AllowedIPs` to `0.0.0.0/0, ::/0` and add NAT rules via PostUp/PostDown on the interface:
-```
-PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
-PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
-```
+Use the **Full tunnel** split-tunnel preset on the peer, and add NAT PostUp/PostDown rules on the
+interface (requires `WG_ALLOW_CUSTOM_SCRIPTS=true`). See
+[Peer Management — split tunnel](./peer-management.md#split-tunnel-presets) and
+[Interface Management — PostUp/PostDown](./interface-management.md#postup-and-postdown-scripts).
 
 ## Security
 
-### Is the admin panel exposed to the internet?
-By default, port 8000 is mapped to all interfaces. For production, restrict it to localhost and put it behind a reverse proxy with HTTPS. See the [Production Deployment](../deployment/production.md) guide.
+### Is the admin panel exposed to the internet by default?
+The default `docker-compose.yml` maps port 8000 on all interfaces. For production, bind it to
+`127.0.0.1` and put it behind a reverse proxy with HTTPS — see
+[Production Deployment](../deployment/production.md).
 
 ### Are private keys stored securely?
-Peer private keys are encrypted using Fernet symmetric encryption with PBKDF2 key derivation (100,000 iterations) and a random salt per key. Server private keys are stored in the WireGuard `.conf` files.
+Yes — peer and interface private keys and MFA secrets are encrypted at rest (Fernet, PBKDF2-derived
+key from `SECRET_KEY`). See [Security — encryption at rest](./security.md#encryption-at-rest).
 
-### Can I enable CSRF protection?
-Yes. Set `CSRF_PROTECTION_ENABLED=true` in your `.env` file. This adds CSRF token validation on all state-changing requests (POST, PUT, DELETE).
+### Does TunnBox support MFA?
+Yes — TOTP-based MFA with recovery codes, per user. See
+[First Setup — enabling MFA](../getting-started/first-setup.md#enabling-mfa) and
+[Security — multi-factor authentication](./security.md#multi-factor-authentication).
+
+### Can I have multiple users with different permission levels?
+Yes — roles are `admin`, `operator`, and `viewer`. Admins manage users under **Settings > Users**.
+See [Security — roles](./security.md#roles).
 
 ### How does rate limiting work?
-Login attempts are limited to 5 per minute per IP address. This is tracked in memory by default. For distributed deployments, configure `RATE_LIMIT_REDIS_URL` to use Redis.
+Login attempts are limited per IP (`LOGIN_RATE_LIMIT`, default `10/minute`), and repeated failures
+against one username trigger a temporary account lockout (`LOCKOUT_THRESHOLD`/`LOCKOUT_MINUTES`).
+See [Security — lockout & rate limiting](./security.md#lockout--rate-limiting).
+
+## Automation
+
+### Can I automate TunnBox without logging in through the UI?
+Yes — create a scoped API key under **Settings > API keys** and call the same REST API the UI
+uses. See [API Keys & Automation](./api-keys-and-automation.md).
 
 ## Maintenance
 
 ### How do I update TunnBox?
-See the [Updating guide](./updating.md).
+See [Updating](./updating.md).
 
 ### How do I back up my data?
-See the [Backup & Restore guide](./backup-restore.md).
+See [Backup & Restore](./backup-restore.md) — and don't forget `SECRET_KEY`/`.secret_key`.
 
 ### How do I reset the admin password?
-There is no built-in password reset. You must delete the database (`./data/app/tunnbox.db`), restart the container, and create a new admin account. This removes all stored data. See [Troubleshooting](./troubleshooting.md) for details.
-
-### Can I have multiple admin users?
-The current version supports a single admin account created during initial setup. Additional user management is not available in the UI.
+```bash
+docker exec -it tunnbox python -m app.cli reset-password admin
+```
+No data loss, no downtime. See [Security](./security.md#resetting-a-password-from-the-command-line).
 
 ### Where are the logs?
-Application logs are written to stdout/stderr and captured by Docker:
 ```bash
 docker compose logs tunnbox
 ```
-Audit logs (login, interface/peer changes) are stored in the database and can be exported via the API.
+Set `LOG_FORMAT=json` for structured logs. Audit logs (logins, config changes) live in the
+database and are viewable/exportable under **Audit** or via `GET /api/audit`.

@@ -1,123 +1,124 @@
 # Configuration
 
-Configuration is managed through environment variables in your `.env` file or `docker-compose.yml`.
+TunnBox has two layers of configuration:
+
+- **Environment variables** — deployment-level settings (secrets, paths, ports, session
+  lifetimes, rate limits). Set in `.env` or `docker-compose.yml`. Changing these requires a
+  restart.
+- **Runtime settings** — day-to-day defaults (public endpoint, DNS, retention). Edited live in
+  the UI under **Settings**, stored in the database. No restart required.
 
 ## Environment Variables
 
+Names are case-insensitive and can be set in `.env` (loaded automatically) or directly in
+`docker-compose.yml`.
+
 ### Application
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `APP_HOST` | IP address the application binds to | `0.0.0.0` |
-| `APP_PORT` | Port the web UI listens on | `8000` |
-| `DEBUG` | Enable debug mode (verbose logging, relaxed security) | `false` |
-| `DATABASE_URL` | SQLite connection string | `sqlite+aiosqlite:///./data/tunnbox.db` |
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `SECRET_KEY` | *(none — auto-generated)* | Root secret for signing sessions and encrypting stored private keys. If unset, a key is generated on first start and persisted to `./data/app/.secret_key` by the entrypoint script. **Set a static value in production** — see the warning below. |
+| `APP_HOST` | `0.0.0.0` | Interface the app binds to inside the container. |
+| `APP_PORT` | `8000` | Port the app listens on inside the container. |
+| `DEBUG` | `false` | Enables verbose error responses (stack traces in JSON). Never enable in production. |
+| `LOG_FORMAT` | `text` | `json` for structured (one-line JSON) logs. |
+
+### Database
+
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `DATABASE_PATH` | `./data/tunnbox.db` | Path to the SQLite file (inside the container this is under `/app/data`, mounted from `./data/app`). |
+| `DATABASE_URL` | *(none)* | Legacy `sqlite+aiosqlite:///...` connection string from v1. If set, it is converted to `DATABASE_PATH` automatically; prefer `DATABASE_PATH` for new installs. |
 
 ### WireGuard
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `WG_DEFAULT_ENDPOINT` | **Required.** Server's public IP or domain name. Clients connect to this address. | — |
-| `WG_DEFAULT_DNS` | DNS server assigned to VPN clients | `1.1.1.1` |
-| `WG_CONFIG_PATH` | Directory for WireGuard `.conf` files | `/etc/wireguard` |
-| `WG_BACKEND_MODE` | `real` (Linux), `mock` (dev), or `auto` (detect platform) | `auto` |
-| `WG_I_PREFER_BUGGY_USERSPACE_TO_POLISHED_KERNEL` | Force WireGuard userspace mode (required in Docker/WSL2) | `1` |
-| `WG_ALLOW_CUSTOM_SCRIPTS` | Allow arbitrary PostUp/PostDown commands. **Security risk** — only iptables allowed when `false`. | `false` |
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `WG_CONFIG_PATH` | `/etc/wireguard` | Directory for rendered `.conf` files. In mock mode, falls back to `./data/wireguard` if this path is not writable. |
+| `WG_BACKEND_MODE` | `auto` | `auto` (real on Linux with `wg`/`wg-quick` installed, otherwise mock), `real`, or `mock`. |
+| `WG_DEFAULT_ENDPOINT` | `""` | Seeds the runtime setting `public_endpoint` on first start. After that, edit it in Settings instead. |
+| `WG_DEFAULT_DNS` | `1.1.1.1` | Seeds the runtime setting `default_dns` on first start. |
+| `WG_ALLOW_CUSTOM_SCRIPTS` | `false` | Allows arbitrary `PostUp`/`PostDown` commands on interfaces. These run as root inside the container. Leave `false` unless you specifically need commands beyond iptables. |
 
-### Authentication
+### Sessions & Auth
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `SECRET_KEY` | JWT signing key. **Set this in production.** Generate with `openssl rand -hex 32`. | Auto-generated |
-| `ALGORITHM` | JWT signing algorithm | `HS256` |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | Access token lifetime in minutes | `15` |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | Refresh token lifetime in days | `7` |
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `15` | Lifetime of the in-memory access token (JWT). |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | Idle session lifetime; extended on each use (sliding window). |
+| `SESSION_ABSOLUTE_DAYS` | `30` | Hard cap on session age, regardless of activity. |
+| `LOGIN_RATE_LIMIT` | `10/minute` | Login attempts allowed per IP, e.g. `10/minute`, `5/hour`. |
+| `LOCKOUT_THRESHOLD` | `8` | Failed logins for one username before it is locked. |
+| `LOCKOUT_MINUTES` | `15` | Lockout duration once the threshold is hit. |
 
-::: warning
-If `SECRET_KEY` is not set, a random key is generated on each container start. This means **all user sessions are invalidated** on every restart. Always set a static key in production.
+### Reverse Proxy & Cookies
+
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `TRUSTED_PROXIES` | `""` | Comma-separated IPs/CIDRs allowed to set `X-Forwarded-For` / `X-Forwarded-Proto`. Required for correct client IPs and `COOKIE_SECURE=auto` behind a proxy. |
+| `CORS_ORIGINS` | dev origins (`http://localhost:5173`, `http://127.0.0.1:5173`) | Comma-separated list of allowed CORS origins. |
+| `COOKIE_SECURE` | `auto` | `auto` sets the `Secure` cookie flag when the request is HTTPS (directly, or via `X-Forwarded-Proto` from a trusted proxy); `true`/`false` force the flag. |
+
+### Stats
+
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `STATS_SAMPLE_SECONDS` | `30` | How often the background sampler polls the WireGuard backend for peer counters. |
+| `STATS_RETENTION_DAYS` | `90` | How long raw `peer_stats` samples are kept before the retention job prunes them. |
+
+::: warning SECRET_KEY
+If `SECRET_KEY` is not set and no `./data/app/.secret_key` file exists, one is generated and
+persisted automatically by the Docker entrypoint — you do not need to set it manually, but you
+must keep `./data/app/` on persistent storage. If you delete or lose that file (or the
+environment variable, if you did set one) without keeping a copy, **every session is invalidated
+and every private key and MFA secret stored in the database becomes undecryptable.** Back up
+`./data/app/.secret_key` alongside your database. See [Backup & Restore](../guides/backup-restore.md).
 :::
 
-### Security
+## Runtime Settings (Settings page)
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `CSRF_PROTECTION_ENABLED` | Enable CSRF token validation on state-changing requests | `false` |
-| `RATE_LIMIT_ENABLED` | Enable login rate limiting (5 attempts/min per IP) | `true` |
-| `RATE_LIMIT_REDIS_URL` | Redis URL for distributed rate limiting. In-memory if not set. | — |
-| `TRUSTED_PROXIES` | Comma-separated IPs trusted for `X-Forwarded-For` header | `127.0.0.1,172.17.0.1` |
-| `CORS_ORIGINS` | Comma-separated allowed origins for CORS | `http://localhost:5173,http://127.0.0.1:5173` |
+These are stored in the database (`settings` table) and editable by an **admin** under
+**Settings > General / Data**. `GET /api/settings` returns them; any role can read, only admin
+can `PATCH`.
 
-## Docker Compose Configuration
+| Setting | Default | Notes |
+|---------|---------|-------|
+| `public_endpoint` | seeded from `WG_DEFAULT_ENDPOINT` | Public IP or hostname clients connect to. Validated as a hostname or IP without a port. |
+| `default_dns` | seeded from `WG_DEFAULT_DNS` | Default DNS server(s) for new peers, comma-separated. |
+| `default_mtu` | `null` | Default interface MTU (1280–1500) when an interface doesn't set its own. |
+| `default_keepalive` | `25` | Default `PersistentKeepalive` for new peers. |
+| `default_client_allowed_ips` | `0.0.0.0/0, ::/0` | Default client-side `AllowedIPs` for new peers (full tunnel). |
+| `audit_retention_days` | `90` | How long audit log entries are kept. |
+| `stats_retention_days` | `90` | How long stats samples are kept (mirrors `STATS_RETENTION_DAYS` but editable at runtime). |
+| `ui_refresh_seconds` | `10` | Polling interval the frontend uses for dashboard/interface/peer lists. |
+| `custom_scripts_allowed` | — | Read-only reflection of `WG_ALLOW_CUSTOM_SCRIPTS`; not settable from the UI. |
+
+## Docker Compose Reference
 
 ### Ports
 
 | Mapping | Purpose |
 |---------|---------|
 | `8000:8000` | Web UI and API |
-| `51820:51820/udp` | WireGuard default interface |
-
-**Custom WireGuard port**: Change the host-side port while keeping the container port:
-```yaml
-ports:
-  - "8000:8000"
-  - "12345:51820/udp"  # Clients connect to port 12345
-```
-
-**Multiple interfaces**: Map additional UDP ports:
-```yaml
-ports:
-  - "8000:8000"
-  - "51820:51820/udp"
-  - "51821:51821/udp"
-```
+| `51820:51820/udp` | WireGuard (map one host port per interface) |
 
 ### Volumes
 
 | Mount | Purpose |
 |-------|---------|
-| `./data/wireguard:/etc/wireguard` | WireGuard config files and keys |
-| `./data/app:/app/data` | SQLite database (`tunnbox.db`) |
-| `/lib/modules:/lib/modules:ro` | Kernel modules (read-only, for WireGuard module loading) |
+| `./data/wireguard:/etc/wireguard` | Rendered WireGuard `.conf` files |
+| `./data/app:/app/data` | SQLite database and `.secret_key` |
+| `/lib/modules:/lib/modules:ro` | Kernel modules, read-only, for loading the WireGuard module |
 
 ### Capabilities
 
-The container drops all capabilities and adds only what is required:
-
-| Capability | Purpose |
-|------------|---------|
-| `NET_ADMIN` | Manage network interfaces (WireGuard) |
-| `SYS_MODULE` | Load the WireGuard kernel module |
-| `MKNOD` | Create device nodes |
-
-### Sysctls
-
-Required kernel parameters set inside the container:
-
 ```yaml
-sysctls:
-  - net.ipv4.ip_forward=1              # Route IPv4 traffic between interfaces
-  - net.ipv4.conf.all.src_valid_mark=1  # Required for WireGuard policy routing
-  - net.ipv6.conf.all.forwarding=1      # Route IPv6 traffic (if using IPv6)
-```
-
-### Resource Limits
-
-The default `docker-compose.yml` includes resource constraints:
-
-```yaml
-deploy:
-  resources:
-    limits:
-      cpus: '2'
-      memory: 1G
-    reservations:
-      cpus: '0.5'
-      memory: 256M
+cap_drop: [ALL]
+cap_add: [NET_ADMIN, SYS_MODULE, MKNOD]
+security_opt: [no-new-privileges:true]
 ```
 
 ### Health Check
-
-The container includes a built-in health check:
 
 ```yaml
 healthcheck:
@@ -130,13 +131,10 @@ healthcheck:
 
 ## Production Checklist
 
-Before deploying to production, verify:
-
-- [ ] `WG_DEFAULT_ENDPOINT` is set to your public IP or domain
-- [ ] `SECRET_KEY` is set to a static value (`openssl rand -hex 32`)
-- [ ] Web UI port (8000) is behind a reverse proxy with HTTPS (see [Production Deployment](../deployment/production.md))
-- [ ] `CSRF_PROTECTION_ENABLED=true`
-- [ ] WireGuard UDP port(s) are open in your firewall
-- [ ] `CORS_ORIGINS` is set to your actual domain (e.g., `https://vpn.yourdomain.com`)
-- [ ] Data directories (`./data/`) are on persistent storage
-- [ ] Backups are configured (see [Backup & Restore](../guides/backup-restore.md))
+- [ ] `WG_DEFAULT_ENDPOINT` (or the `public_endpoint` runtime setting) points at your public IP or domain
+- [ ] `SECRET_KEY` is set to a static value (`openssl rand -hex 32`), or `./data/app/.secret_key` is on durable, backed-up storage
+- [ ] Web UI port is bound to `127.0.0.1` and reverse-proxied with HTTPS — see [Production Deployment](../deployment/production.md)
+- [ ] `TRUSTED_PROXIES` includes your reverse proxy's IP/CIDR
+- [ ] `CORS_ORIGINS` matches your real domain if the frontend is served from elsewhere
+- [ ] Data directories (`./data/`) are on persistent storage and backed up
+- [ ] MFA is enabled on the admin account

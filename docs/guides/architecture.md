@@ -1,115 +1,157 @@
 # Architecture
 
-TunnBox is a web-based management layer for WireGuard. It does not replace WireGuard — it generates and manages WireGuard configuration files and interacts with the `wg` and `wg-quick` CLI tools.
+TunnBox is a single Docker image: a FastAPI backend that serves both the REST API (under `/api`)
+and the built SvelteKit frontend (static files, everything else). It manages WireGuard by
+generating configuration and calling `wg`/`wg-quick`, not by replacing WireGuard.
 
 ## Component Overview
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                   Docker Container                   │
-│                                                     │
-│  ┌──────────────┐     ┌──────────────────────────┐  │
-│  │   SvelteKit  │────▶│       FastAPI Backend     │  │
-│  │   Frontend   │     │                          │  │
-│  │  (Static)    │     │  ┌────────────────────┐  │  │
-│  └──────────────┘     │  │   Auth (JWT/bcrypt) │  │  │
-│                       │  ├────────────────────┤  │  │
-│                       │  │   WireGuard Service │  │  │
-│                       │  │   (wg / wg-quick)   │  │  │
-│                       │  ├────────────────────┤  │  │
-│                       │  │   SQLite Database   │  │  │
-│                       │  └────────────────────┘  │  │
-│                       └──────────────────────────┘  │
-│                                                     │
-│  ┌──────────────────────────────────────────────┐   │
-│  │           WireGuard Kernel Module             │   │
-│  │         (via NET_ADMIN capability)            │   │
-│  └──────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────┘
-         │                           │
-    Port 8000                  Port 51820/udp
-    (Web UI)                   (WireGuard VPN)
+┌───────────────────────────────────────────────────────────┐
+│                      Docker Container                      │
+│                                                             │
+│  ┌───────────────┐      ┌─────────────────────────────┐    │
+│  │   SvelteKit   │◀────▶│         FastAPI (/api)       │    │
+│  │   frontend    │      │                               │    │
+│  │  (static,     │      │  auth · sessions · MFA        │    │
+│  │   served at   │      │  interfaces · peers · share   │    │
+│  │   / )         │      │  stats · audit · settings      │    │
+│  └───────────────┘      │  background scheduler         │    │
+│                          └───────────┬───────────────────┘    │
+│                                      │                        │
+│                          ┌───────────▼───────────────────┐    │
+│                          │      SQLite (WAL mode)         │    │
+│                          │  source of truth for interfaces │   │
+│                          │  and peers                       │  │
+│                          └───────────┬───────────────────┘    │
+│                                      │ renders                │
+│                          ┌───────────▼───────────────────┐    │
+│                          │   WireGuard backend (real/mock) │   │
+│                          │   wg / wg-quick, or simulated   │   │
+│                          └───────────┬───────────────────┘    │
+│                                      │                        │
+│                          ┌───────────▼───────────────────┐    │
+│                          │   .conf files (WG_CONFIG_PATH)  │   │
+│                          └─────────────────────────────────┘  │
+└───────────────────────────────────────────────────────────┘
+         │                                    │
+     Port 8000                          Port 51820/udp (per interface)
+     (Web UI + API)                     (WireGuard)
 ```
+
+## The Database Is the Source of Truth
+
+Interfaces and peers live in SQLite, not in `.conf` files. Every mutation (create, edit, enable,
+disable, rotate keys, delete) writes to the database first, then **renders** the affected
+interface's `.conf` file from the current database state. The app never hand-edits an existing
+`.conf` file or reads it back to determine current state — the file is a derived artifact, safe
+to delete and regenerate at any time by toggling the interface.
+
+## Legacy Import on First Start
+
+At startup, the app scans `WG_CONFIG_PATH` for any `<name>.conf` file that isn't already a known
+interface in the database. For each one found, it parses the file and creates a matching
+interface (and its peers) in the database — this is how a v1 installation (or any hand-managed
+WireGuard setup) upgrades transparently: point TunnBox at an existing `/etc/wireguard`, and it
+adopts what's there on first boot. If a legacy `peer_metadata` table exists from a v1 database, it
+is consulted to recover peer names and stored private keys (matched by interface name + public
+key) before being dropped. Import is idempotent and never overwrites a database row that already
+exists — it only fills in interfaces/peers that aren't yet known.
+
+## Background Jobs
+
+A small asyncio scheduler runs registered jobs on independent intervals with error isolation (one
+job failing doesn't stop the others):
+
+| Job | Interval | Does |
+|-----|----------|------|
+| `stats_sampler` | `STATS_SAMPLE_SECONDS` (default 30s) | Polls the WireGuard backend for each active interface, computes rx/tx deltas against the peer's stored cumulative totals (handling counter resets), updates `last_handshake_at`, and writes a `peer_stats` row |
+| `peer_expiry` | 60s | Disables any enabled peer whose `expires_at` has passed, re-renders and syncs the interface, audit-logs `peer.auto_disabled` |
+| `retention` | 3600s (1h) | Prunes audit log entries, stats samples, expired sessions, and expired share links past their retention windows |
+| reconcile | once, at startup | Runs the legacy import, then (real backend only) brings up every interface marked `enabled` and re-renders its config |
+
+## WireGuard Backends
+
+TunnBox talks to WireGuard through a small interface (`WireGuardBackend`) with two
+implementations, selected by `WG_BACKEND_MODE`:
+
+- **`real`** — calls the actual `wg` and `wg-quick` binaries (`up`, `down`, `sync` via
+  `wg syncconf`, `dump` via `wg show <iface> dump`). Requires Linux with WireGuard available
+  (kernel module or the wireguard-go userspace fallback).
+- **`mock`** — keeps an in-memory "active" set and generates deterministic, pseudo-random but
+  monotonically growing simulated traffic and handshake data per peer. No real network changes
+  happen. Used automatically on non-Linux platforms or when the `wg` binary is missing, so the UI
+  and API can be developed and tested without a working WireGuard install.
+- **`auto`** (default) — picks `real` on Linux with `wg`/`wg-quick` on `PATH`, otherwise `mock`.
+
+Keypairs are generated in Python (X25519 via the `cryptography` package) rather than by shelling
+out to `wg genkey`.
+
+## Schema Overview
+
+SQLite, WAL mode, foreign keys on. Migrations are versioned and applied at startup
+(`schema_version` table tracks the current version).
+
+| Table | Purpose |
+|-------|---------|
+| `users` | Accounts: username, bcrypt hash, role, active flag, encrypted TOTP secret, lockout state |
+| `recovery_codes` | Hashed MFA recovery codes, one-time use |
+| `sessions` | Server-side sessions: hashed refresh token, IP/user agent, sliding + absolute expiry, revocation |
+| `refresh_token_history` | Every rotated-out refresh token hash, used to detect reuse (theft) |
+| `api_keys` | Hashed API keys, scopes, prefix (for display), expiry, revocation |
+| `interfaces` | WireGuard interfaces: encrypted private key, public key, address(es), port, DNS/MTU/scripts, enabled flag |
+| `peers` | Peers: encrypted private key (nullable), encrypted PSK, allowed IPs, client-side allowed IPs, keepalive, expiry, cumulative rx/tx |
+| `peer_stats` | Time series of rx/tx deltas and online state per peer, indexed by `(peer_id, ts)` |
+| `share_links` | Hashed one-time/expiring share tokens for peer configs |
+| `audit_logs` | Every mutation: actor, action, target, JSON details, IP, timestamp |
+| `settings` | Key-value store for runtime settings (see [Configuration](../getting-started/configuration.md#runtime-settings-settings-page)) |
+
+## Data Flow
+
+### Interface creation
+1. `POST /api/interfaces` validates the request (name pattern, CIDR, port range).
+2. The backend generates an X25519 keypair, encrypts the private key, and inserts the interface row.
+3. The `.conf` is rendered and, if `enabled`, the interface is brought up (real backend) or marked
+   active (mock).
+
+### Peer connection
+1. `POST /api/interfaces/{name}/peers` generates a keypair and PSK for the peer, resolves
+   `allowed_ips` (auto or explicit), and inserts the peer row.
+2. The interface's `.conf` is re-rendered; if active, `wg syncconf` applies the change without a
+   restart.
+3. The user downloads the client config, scans a QR code, or sends a share link — see
+   [Peer Management](./peer-management.md).
+4. The client connects to `public_endpoint:listen_port`.
+
+### Authentication
+1. `POST /api/auth/login` verifies the bcrypt hash; if MFA is enabled, returns `mfa_required` and
+   an `mfa_token` instead of a session.
+2. On success, a session row is created, an access JWT is issued, and a refresh token is set as an
+   httpOnly cookie.
+3. `POST /api/auth/refresh` validates and rotates the cookie, extends the session, and issues a
+   new access token.
+
+See [Security](./security.md) for the full auth, MFA, and API-key model.
 
 ## Technology Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | SvelteKit, Tailwind CSS 4, TypeScript |
-| Backend | FastAPI (Python), Pydantic |
-| Database | SQLite via aiosqlite (async) |
-| Authentication | JWT (HS256), bcrypt, httpOnly cookies |
-| VPN | WireGuard kernel module, `wg` / `wg-quick` CLI |
-| Container | Docker with minimal capabilities |
-
-## Data Flow
-
-### Interface Creation
-1. User submits interface form in the UI.
-2. Frontend sends `POST /api/interfaces` with name, port, address.
-3. Backend validates input (name length, CIDR format, port range).
-4. Backend generates a WireGuard keypair using `wg genkey` / `wg pubkey`.
-5. Backend writes a `.conf` file to `/etc/wireguard/`.
-6. Interface metadata is stored in the database.
-
-### Peer Connection
-1. User adds a peer via the UI.
-2. Backend generates a keypair for the peer.
-3. The peer's public key and allowed IPs are added to the interface's `.conf` file.
-4. The private key is encrypted (Fernet + PBKDF2) and stored in the database.
-5. If the interface is active, `wg syncconf` applies the change live.
-6. User downloads the client config or scans a QR code.
-7. The client connects to the server's public endpoint on the WireGuard UDP port.
-
-### Authentication Flow
-1. User submits credentials to `POST /api/auth/login`.
-2. Backend verifies password against bcrypt hash.
-3. Backend issues a short-lived JWT access token (15 min default).
-4. Backend issues a refresh token stored in an httpOnly cookie.
-5. When the access token expires, the frontend calls `POST /api/auth/refresh`.
-6. The backend validates the refresh token cookie, rotates it, and issues a new access token.
-
-## WireGuard Backend Modes
-
-TunnBox uses a strategy pattern for WireGuard operations:
-
-- **Real mode** (`WG_BACKEND_MODE=real`): Calls actual `wg` and `wg-quick` binaries. Requires Linux with the WireGuard kernel module.
-- **Mock mode** (`WG_BACKEND_MODE=mock`): Simulates WireGuard operations using the filesystem. Used for development on Windows/macOS.
-- **Auto mode** (`WG_BACKEND_MODE=auto`, default): Detects the platform and selects real or mock automatically.
-
-## Database Schema
-
-TunnBox uses five tables:
-
-| Table | Purpose |
-|-------|---------|
-| `users` | Admin accounts (username, bcrypt password hash) |
-| `peer_metadata` | Peer names, encrypted private keys, interface associations |
-| `audit_logs` | Timestamped log of all admin actions with IP addresses |
-| `refresh_tokens` | Hashed refresh tokens with expiry timestamps |
-| `settings` | Key-value store for runtime settings overrides |
+| Backend | FastAPI, Pydantic v2, SQLite via `aiosqlite` (WAL) |
+| Frontend | SvelteKit 2, Svelte 5, Tailwind CSS 4, TypeScript |
+| Auth | Server-side sessions, JWT access tokens, bcrypt, TOTP (`pyotp`) |
+| Secrets | Fernet (AES-128-CBC + HMAC-SHA256) with PBKDF2-derived keys |
+| VPN | WireGuard kernel module, with a wireguard-go userspace fallback |
+| Container | Docker, capabilities dropped except `NET_ADMIN`/`SYS_MODULE`/`MKNOD` |
 
 ## File System Layout
 
-Inside the container:
-
 ```
-/app/                      # Application code
-  backend/app/             # FastAPI application
-  frontend/build/          # Compiled SvelteKit frontend
-/app/data/                 # Mounted: ./data/app
-  tunnbox.db               # SQLite database
-/etc/wireguard/            # Mounted: ./data/wireguard
-  wg0.conf                 # WireGuard interface configs
-  wg1.conf
+/app/backend/app/       # FastAPI application code
+/app/frontend/build/    # Compiled SvelteKit frontend (served as static files)
+/app/data/               # Mounted from ./data/app
+  tunnbox.db              # SQLite database
+  .secret_key             # Generated SECRET_KEY, if you didn't set one
+/etc/wireguard/           # Mounted from ./data/wireguard
+  wg0.conf, wg1.conf, ... # Rendered interface configs (derived, not authoritative)
 ```
-
-## Security Layers
-
-TunnBox applies defense-in-depth:
-
-1. **Container level**: Minimal capabilities (`NET_ADMIN`, `SYS_MODULE`, `MKNOD`), `no-new-privileges`, resource limits.
-2. **Network level**: CORS restrictions, trusted proxy configuration, rate limiting on login.
-3. **Application level**: JWT authentication, CSRF protection (optional), security headers (HSTS, CSP, X-Frame-Options).
-4. **Data level**: bcrypt for passwords, Fernet encryption for private keys, parameterized SQL queries.
-5. **Input level**: Strict validation on interface names, peer names, CIDR addresses, port numbers, and PostUp/PostDown scripts.

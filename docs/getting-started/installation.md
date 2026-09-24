@@ -84,7 +84,7 @@ docker compose ps
 
 # Check health endpoint
 curl http://localhost:8000/api/health
-# Expected: {"status":"healthy"}
+# Expected: {"status":"ok"}
 
 # View logs for any errors
 docker compose logs tunnbox
@@ -132,7 +132,7 @@ curl http://localhost:8000/api/health
 TunnBox supports a **Mock Backend** for developing the UI on non-Linux systems.
 
 ### Prerequisites
-- Python 3.10+
+- Python 3.12+
 - Node.js 18+
 
 ### Backend Setup (Mock Mode)

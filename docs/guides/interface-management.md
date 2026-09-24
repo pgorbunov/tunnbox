@@ -1,116 +1,107 @@
 # Interface Management
 
-Interfaces are WireGuard virtual network devices. Each interface has its own subnet, listen port, and set of peers.
+Interfaces are WireGuard virtual network devices. Each has its own address(es), listen port, and
+set of peers. TunnBox's database is the source of truth for interfaces — the `.conf` file under
+`WG_CONFIG_PATH` is always *rendered* from the database, never edited by hand or read back except
+at startup (see [Architecture](./architecture.md)).
 
 ## Creating an Interface
 
-1. Navigate to the **Dashboard** or **Interfaces** page.
-2. Click **New Interface**.
-3. Fill in the details:
-   - **Name**: A unique name, up to 15 characters (e.g., `wg0`, `office`). Only alphanumeric characters, `-`, and `_` are allowed.
-   - **Listen Port**: The UDP port WireGuard listens on (e.g., `51820`). Must be unique per interface and mapped in `docker-compose.yml`.
-   - **Address**: The server's IP in the VPN subnet in CIDR notation (e.g., `10.0.0.1/24`).
-   - **DNS**: Optional DNS server for peers (defaults to server setting).
-4. Click **Save**.
+`POST /api/interfaces { name, address, listen_port, dns?, mtu?, post_up?, post_down?, public_endpoint?, enabled?: true }`
 
-The interface is created in a DOWN state. Click the toggle switch to bring it UP.
+- **Name** — up to 15 characters, `^[a-zA-Z0-9_=+.-]{1,15}$`; `all`, `default`, and `lo` are
+  reserved.
+- **Address** — CIDR notation, e.g. `10.8.0.1/24`; comma-separate for dual-stack,
+  e.g. `10.8.0.1/24, fd00:8::1/64`.
+- **Listen Port** — UDP port, unique across interfaces, must be mapped in `docker-compose.yml`.
+- **DNS**, **MTU**, **public endpoint override** — optional; each falls back to the global
+  setting when unset.
+- **PostUp / PostDown** — only accepted when `WG_ALLOW_CUSTOM_SCRIPTS=true`; see below.
+- **Enabled** — defaults to `true`. On the real backend, TunnBox brings an enabled interface up
+  itself (there's no separate "bring it up after creating" step, and the app also reconciles
+  enabled interfaces at startup — see [Architecture](./architecture.md)).
 
-::: tip
-Reserved names (`lo`, `localhost`, `default`, `all`) are blocked to prevent conflicts with system interfaces.
-:::
+## Editing an Interface
+
+`PATCH /api/interfaces/{name}` accepts any of the create fields. What happens next depends on
+which fields changed:
+
+- Changing **`address`, `listen_port`, `mtu`, `post_up`, or `post_down`** while the interface is
+  active triggers a **restart** (`wg-quick down` + `wg-quick up`) after re-rendering the config —
+  these can't be applied to a running interface without one.
+- Changing **`enabled`** brings the interface up or down accordingly.
+- Any other field change (DNS, public endpoint override) just re-renders the config; if the
+  interface is active, it's applied live with `wg syncconf` rather than a restart.
+
+Adding, removing, enabling or disabling a **peer** on an already-active interface is always
+applied live via `wg syncconf` — no restart.
 
 ## Bringing Interfaces Up and Down
 
-- **Toggle switch** in the UI, or via the API:
-  ```bash
-  # Bring up
-  curl -X POST http://localhost:8000/api/interfaces/wg0/up \
-    -H "Authorization: Bearer <token>"
+```bash
+curl -X POST https://vpn.example.com/api/interfaces/wg0/up   -H "Authorization: Bearer <token>"
+curl -X POST https://vpn.example.com/api/interfaces/wg0/down -H "Authorization: Bearer <token>"
+```
 
-  # Bring down
-  curl -X POST http://localhost:8000/api/interfaces/wg0/down \
-    -H "Authorization: Bearer <token>"
-  ```
-- Bringing an interface UP runs `wg-quick up`.
-- Bringing it DOWN runs `wg-quick down`.
-- Adding or removing peers on a running interface uses `wg syncconf` for live updates without downtime.
+`up` runs `wg-quick up`; `down` runs `wg-quick down`. Both are idempotent — bringing up an
+already-active interface or bringing down an already-inactive one is a no-op rather than an
+error. In mock mode, these toggle an in-memory active flag with simulated stats instead of
+touching the real network stack.
 
 ## PostUp and PostDown Scripts
 
-PostUp and PostDown are shell commands executed when an interface comes up or goes down. The most common use case is NAT masquerading for full-tunnel VPN.
+PostUp/PostDown commands run when an interface comes up or goes down — typically NAT masquerade
+rules for full-tunnel clients. They're gated by `WG_ALLOW_CUSTOM_SCRIPTS`:
 
-### Default behavior (WG_ALLOW_CUSTOM_SCRIPTS=false)
+- **`WG_ALLOW_CUSTOM_SCRIPTS=false`** (default) — the fields are rejected outright; you cannot
+  set `post_up`/`post_down` on an interface at all while this is off.
+- **`WG_ALLOW_CUSTOM_SCRIPTS=true`** — arbitrary commands are accepted and run as **root** inside
+  the container. Only enable this if you understand the risk and need commands beyond what a
+  disabled setting would allow.
 
-When custom scripts are disabled (the default), only `iptables` and `ip6tables` commands are allowed. Dangerous patterns (`;`, `&&`, `||`, `$()`, backticks, `curl`, `wget`, etc.) are blocked.
-
-Example — enable NAT so peers can access the internet:
+Typical NAT setup once enabled:
 
 ```
-PostUp:   iptables -A FORWARD -i %i -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
-PostDown: iptables -D FORWARD -i %i -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+PostUp   = iptables -A FORWARD -i %i -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
 ```
 
-`%i` is replaced by WireGuard with the interface name.
+`%i` is substituted by WireGuard with the interface name. Check the container's outbound
+interface name first — it may not be `eth0`:
 
-::: warning
-The outbound interface inside the container may not be `eth0`. Check with:
 ```bash
 docker exec tunnbox ip route | grep default
 ```
-:::
 
-### Custom scripts (WG_ALLOW_CUSTOM_SCRIPTS=true)
+Setting either `post_up` or `post_down` on an interface always triggers a restart when the
+interface is active (see above), regardless of whether custom scripts are enabled.
 
-Set `WG_ALLOW_CUSTOM_SCRIPTS=true` in your `.env` to allow arbitrary commands. This is a security risk — only enable it if you need commands beyond iptables.
+## Server Config Download
+
+`GET /api/interfaces/{name}/config` returns the rendered server `.conf` as plain text, including
+the interface's **private key** — restricted to **admin** only. Useful for manual inspection or
+migrating a single interface elsewhere.
 
 ## Running Multiple Interfaces
 
-You can create multiple interfaces, each with its own subnet and port. This is useful for:
-- Separating user groups (e.g., `wg-employees` and `wg-contractors`)
-- Different network policies per interface
-- Isolating traffic
-
-For each additional interface, map its UDP port in `docker-compose.yml`:
+Create additional interfaces with unique names and non-overlapping subnets, and map each
+interface's UDP port in `docker-compose.yml`:
 
 ```yaml
 ports:
   - "8000:8000"
   - "51820:51820/udp"   # wg0
   - "51821:51821/udp"   # wg1
-  - "51822:51822/udp"   # wg2
 ```
-
-Use non-overlapping subnets for each interface (e.g., `10.0.0.0/24`, `10.0.1.0/24`, `10.0.2.0/24`).
-
-## Port Forwarding
-
-To forward a specific port from the VPN to a peer, use PostUp/PostDown rules:
-
-```
-PostUp:   iptables -t nat -A PREROUTING -i eth0 -p tcp --dport 8080 -j DNAT --to-destination 10.0.0.2:8080
-PostDown: iptables -t nat -D PREROUTING -i eth0 -p tcp --dport 8080 -j DNAT --to-destination 10.0.0.2:8080
-```
-
-This forwards port 8080 on the server to peer `10.0.0.2`. Requires `WG_ALLOW_CUSTOM_SCRIPTS=true` if using non-iptables commands.
 
 ## Monitoring
 
-The dashboard shows per-interface statistics:
-- **Status**: UP or DOWN
-- **Peer count**: Total and currently connected
-- **Transfer**: Total bytes received and transmitted
-
-For detailed per-peer stats, use the stats endpoint:
-```bash
-curl http://localhost:8000/api/interfaces/wg0/stats \
-  -H "Authorization: Bearer <token>"
-```
+Interfaces report `is_active`, `peer_count`, `online_peer_count`, and cumulative `rx_total`/
+`tx_total`. Historical series (1h–30d, bucketed) are at
+`GET /api/interfaces/{name}/stats?range=1h|6h|24h|7d|30d`.
 
 ## Deleting an Interface
 
-Deleting an interface removes:
-- The WireGuard `.conf` file
-- All associated peer metadata from the database
-- The kernel interface (if it was UP)
-
-This action cannot be undone. Client configs that reference this interface will stop working.
+`DELETE /api/interfaces/{name}` brings it down (if active), deletes its rendered `.conf`, and
+deletes all of its peers and their history from the database. This cannot be undone; the UI
+requires typing the interface's name to confirm.

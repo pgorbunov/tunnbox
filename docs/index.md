@@ -18,15 +18,15 @@ hero:
 
 features:
   - icon: 🔧
-    title: Interface Management
-    details: Create, configure, and monitor WireGuard interfaces. Set addresses, DNS, MTU, and routing rules through a clean UI.
+    title: Manage
+    details: Multiple WireGuard interfaces with IPv4/IPv6 subnets, live up/down, automatic peer IP assignment, split tunnelling presets, expiry with auto-disable, and bulk actions.
   - icon: 👥
-    title: Peer Management
-    details: Add peers, auto-generate key pairs, download .conf files, and share QR codes for mobile setup.
+    title: Onboard
+    details: One-click peer onboarding — QR code, .conf download, or a one-time share link — with generated keypairs and preshared keys.
+  - icon: 📊
+    title: Observe
+    details: Live per-peer status and transfer counters, historical bandwidth charts, a dashboard with top talkers and expiring peers, and a searchable audit log.
   - icon: 🔒
     title: Secure by Default
-    details: JWT authentication, security headers, and a modern dark-mode interface. Runs in Docker with minimal attack surface.
-  - icon: 📦
-    title: Easy Deployment
-    details: Single Docker image with everything included. Pull, configure, and run — no complex setup required.
+    details: Short-lived sessions with rotating refresh cookies, TOTP MFA with recovery codes, roles and scoped API keys, lockout, strict CSP, and encryption at rest.
 ---

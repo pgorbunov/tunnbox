@@ -30,6 +30,7 @@ export default defineConfig({
                     { text: 'Interface Management', link: '/guides/interface-management' },
                     { text: 'Peer Management', link: '/guides/peer-management' },
                     { text: 'Security', link: '/guides/security' },
+                    { text: 'API Keys & Automation', link: '/guides/api-keys-and-automation' },
                     { text: 'Backup & Restore', link: '/guides/backup-restore' },
                     { text: 'Updating', link: '/guides/updating' },
                     { text: 'Troubleshooting', link: '/guides/troubleshooting' },
